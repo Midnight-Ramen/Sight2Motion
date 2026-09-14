@@ -60,7 +60,7 @@ export class MockRobotAdapter implements RobotAdapter {
     this.emit();
   }
   getCapabilities(): ActionKind[] {
-    return ['beak', 'tail', 'move', 'sound', 'wait', 'stop'];
+    return ['beak', 'tail', 'tailLightSequence', 'move', 'sound', 'wait', 'stop'];
   }
   async executeAction(action: Action, signal: AbortSignal) {
     if (!this.state.connected) throw new Error('Connect your mock Finch first.');
@@ -104,4 +104,5 @@ export class MockRobotAdapter implements RobotAdapter {
     this.emit();
   }
 }
+
 

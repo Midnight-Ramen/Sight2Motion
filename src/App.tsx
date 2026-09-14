@@ -1,3 +1,4 @@
+import { withDetectionRegions, REGION_BOUNDARIES } from './core/DetectionRegions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Aperture,
@@ -269,11 +270,12 @@ export default function App() {
           }
         }
         if (version !== loopVersion.current) return;
+        items = withDetectionRegions(items, demo ? 1280 : video.current?.videoWidth || 1280);
         consume(items);
         const classes = [...new Set(items.map((d) => d.className))].sort().join(',');
         if (classes && classes !== oldClasses)
           log(
-            `${demo ? 'Demo: ' : ''}${items[0].className} detected · ${Math.round(items[0].confidence * 100)}%`,
+            `${demo ? 'Demo: ' : ''}${items[0].className} detected · ${Math.round(items[0].confidence * 100)}% · ${items[0].region?.toUpperCase()}`,
           );
         oldClasses = classes;
         setMeasuredFps(
@@ -312,6 +314,19 @@ export default function App() {
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
+    if (project.rules.some(r => r.enabled && r.region && r.region !== 'anywhere')) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 8]);
+      for (const boundary of REGION_BOUNDARIES) {
+        ctx.beginPath(); ctx.moveTo(c.width * boundary, 0); ctx.lineTo(c.width * boundary, c.height); ctx.stroke();
+      }
+      ctx.font = '14px system-ui'; ctx.textAlign = 'center';
+      ['LEFT', 'CENTER', 'RIGHT'].forEach((label, i) => ctx.fillText(label, c.width * (i + 0.5) / 3, 22));
+      ctx.restore();
+    }
     if (!project.vision.visualize) return;
     for (const d of detections) {
       ctx.strokeStyle = '#90efaa';
@@ -324,7 +339,7 @@ export default function App() {
       ctx.fillStyle = '#17392c';
       ctx.fillText(text, d.x + 12, d.y - 10);
     }
-  }, [detections, project.vision.visualize, demo]);
+  }, [detections, project.vision.visualize, project.rules, demo]);
   async function connectCamera() {
     pause();
     setDemo(false);
@@ -1224,6 +1239,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 

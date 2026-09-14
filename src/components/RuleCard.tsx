@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, GripVertical, Lightbulb, Plus, Trash2 } from 'lucid
 import {
   actionDefinitions,
   makeAction,
+  sequenceDefaults,
   type Action,
   type ActionKind,
   type Rule,
@@ -71,6 +72,10 @@ export function RuleCard({
             </select>
             <span>is detected</span>
           </div>
+          <label>Location <select aria-label="Location" value={rule.region ?? 'anywhere'}
+            onChange={e => patch({ region: e.target.value as Rule['region'] })}>
+            {(['anywhere', 'left', 'center', 'right'] as const).map(region => <option key={region} value={region}>{objectLabel(region)}</option>)}
+          </select></label>
           <label className="confidence">
             With confidence of at least <b>{Math.round(rule.confidence * 100)}%</b>
             <input
@@ -174,7 +179,7 @@ export function RuleCard({
                 <select
                   aria-label={`Action ${i + 1} type`}
                   value={a.kind}
-                  onChange={(e) => updateAction(a.id, { kind: e.target.value as ActionKind, ...(e.target.value === 'tail' ? { tailLights: [] } : {}) })}
+                  onChange={(e) => updateAction(a.id, { kind: e.target.value as ActionKind, ...(e.target.value === 'tail' ? { tailLights: [] } : {}), ...(e.target.value === 'tailLightSequence' ? sequenceDefaults() : {}) })}
                 >
                   {capabilities.map((kind) => (
                     <option key={kind} value={kind}>
@@ -204,6 +209,27 @@ export function RuleCard({
                         : (a.tailLights ?? [1, 2, 3, 4]).filter(n => n !== light) })} />{light}
                   </label>)}
                   <small>Choose which lights receive this color. Others stay unchanged.</small>
+                </fieldset>}
+                {a.kind === 'tailLightSequence' && <fieldset className="tail-light-picker">
+                  <legend>Tail light sequence</legend>
+                  {[1, 2, 3, 4].map(light => {
+                    const step = a.steps?.find(s => s.light === light);
+                    return <div key={light} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label><input type="checkbox" aria-label={`Action ${i + 1} sequence light ${light}`} checked={!!step}
+                        onChange={e => updateAction(a.id, { steps: e.target.checked
+                          ? [...(a.steps ?? []), sequenceDefaults().steps[light - 1]].sort((x, y) => x.light - y.light)
+                          : (a.steps ?? []).filter(s => s.light !== light) })} />{light}</label>
+                      <input type="color" aria-label={`Action ${i + 1} sequence light ${light} color`} disabled={!step}
+                        value={step?.color ?? sequenceDefaults().steps[light - 1].color}
+                        onChange={e => updateAction(a.id, { steps: a.steps!.map(s => s.light === light ? { ...s, color: e.target.value } : s) })} />
+                    </div>;
+                  })}
+                  <label>Step speed (ms)<input type="number" min={50} max={10000} step={50} value={a.stepDurationMs ?? 250}
+                    onChange={e => updateAction(a.id, { stepDurationMs: Math.max(50, Math.min(10000, Math.round(+e.target.value))) })} /></label>
+                  <label>Repeat (times)<input type="number" min={1} max={20} value={a.repeatCount ?? 3}
+                    onChange={e => updateAction(a.id, { repeatCount: Math.max(1, Math.min(20, Math.round(+e.target.value))) })} /></label>
+                  <label><input type="checkbox" checked={a.clearPrevious ?? true} onChange={e => updateAction(a.id, { clearPrevious: e.target.checked })} />One light at a time</label>
+                  <label><input type="checkbox" checked={a.clearWhenFinished ?? true} onChange={e => updateAction(a.id, { clearWhenFinished: e.target.checked })} />Turn sequence lights off when finished</label>
                 </fieldset>}
                 {a.kind === 'move' && (
                   <>
@@ -303,5 +329,7 @@ export function RuleCard({
     </article>
   );
 }
+
+
 
 

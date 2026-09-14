@@ -30,7 +30,7 @@ export class FinchAdapter implements RobotAdapter {
     this.changed({ ...this.status });
   }
   getCapabilities(): ActionKind[] {
-    return ['beak', 'tail', 'move', 'wait', 'stop'];
+    return ['beak', 'tail', 'tailLightSequence', 'move', 'wait', 'stop'];
   }
   async connect() {
     const token = ++this.generation;
@@ -196,4 +196,5 @@ export class FinchAdapter implements RobotAdapter {
     }
   }
 }
+
 

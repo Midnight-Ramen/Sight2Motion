@@ -1,4 +1,5 @@
-import type { RobotAdapter } from './RobotAdapter';
+import { delay, type RobotAdapter } from './RobotAdapter';
+import { validTailSequence } from './types';
 import type { Action } from './types';
 /** One sequence at a time; busy triggers are dropped, never queued unboundedly. */
 export class ActionEngine {
@@ -37,7 +38,25 @@ export class ActionEngine {
               ? `Move ${action.direction} → ${action.duration} ms`
               : `${action.kind} action`,
         );
-        await this.robot.executeAction(action, controller.signal);
+        if (action.kind === 'tailLightSequence') {
+          if (!validTailSequence(action)) throw new Error('Invalid tail light sequence.');
+          const signal = controller.signal;
+          const setLight = async (light: number, color: string) => {
+            if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+            await this.robot.executeAction({ ...action, kind: 'tail', tailLights: [light], color }, signal);
+          };
+          for (let repeat = 0; repeat < action.repeatCount!; repeat++) {
+            for (const step of action.steps!) {
+              await setLight(step.light, step.color);
+              await delay(action.stepDurationMs!, signal);
+              if (action.clearPrevious) await setLight(step.light, '#000000');
+            }
+          }
+          if (action.clearWhenFinished)
+            for (const step of action.steps!) await setLight(step.light, '#000000');
+        } else {
+          await this.robot.executeAction(action, controller.signal);
+        }
       }
       return !controller.signal.aborted;
     } catch {
@@ -59,3 +78,4 @@ export class ActionEngine {
     }
   }
 }
+

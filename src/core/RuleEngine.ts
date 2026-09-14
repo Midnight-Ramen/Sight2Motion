@@ -17,6 +17,7 @@ export class RuleEngine {
         rule.className,
         rule.confidence,
         now,
+        rule.region ?? 'anywhere',
       );
       const state = this.states.get(rule.id) ?? { fired: false, qualified: false, last: -Infinity };
       if (presence.appeared) {
@@ -40,3 +41,4 @@ export class RuleEngine {
     return result;
   }
 }
+

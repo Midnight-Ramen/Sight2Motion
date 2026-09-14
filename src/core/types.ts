@@ -1,3 +1,4 @@
+export type DetectionRegion = 'anywhere' | 'left' | 'center' | 'right';
 export interface Detection {
   className: string;
   confidence: number;
@@ -7,14 +8,20 @@ export interface Detection {
   height: number;
   centerX: number;
   centerY: number;
+  region?: Exclude<DetectionRegion, 'anywhere'>;
 }
-export type ActionKind = 'beak' | 'tail' | 'move' | 'sound' | 'wait' | 'stop';
+export type ActionKind = 'beak' | 'tail' | 'tailLightSequence' | 'move' | 'sound' | 'wait' | 'stop';
 export interface Action {
   id: string;
   kind: ActionKind;
   enabled: boolean;
   color: string;
   tailLights?: number[];
+  steps?: { light: number; color: string }[];
+  stepDurationMs?: number;
+  repeatCount?: number;
+  clearPrevious?: boolean;
+  clearWhenFinished?: boolean;
   duration: number;
   speed: number;
   direction: 'forward' | 'backward' | 'left' | 'right';
@@ -27,6 +34,7 @@ export interface Rule {
   enabled: boolean;
   className: string;
   confidence: number;
+  region: DetectionRegion;
   minDuration: number;
   cooldown: number;
   interval: number;
@@ -50,6 +58,7 @@ export interface Project {
 }
 export const actionDefinitions: Record<ActionKind, { label: string; description: string }> = {
   beak: { label: 'Beak light', description: 'Give your Finch a colorful beak' },
+  tailLightSequence: { label: 'Tail light sequence', description: 'Animate selected tail lights in order' },
   tail: { label: 'Tail lights', description: 'Light up all four tail LEDs' },
   move: { label: 'Move', description: 'Move the simulated wheels' },
   sound: { label: 'Play a note', description: 'Show a sound event' },
@@ -62,6 +71,7 @@ export const makeAction = (kind: ActionKind = 'beak'): Action => ({
   enabled: true,
   color: '#51d691',
   tailLights: kind === 'tail' ? [] : [1, 2, 3, 4],
+  ...(kind === 'tailLightSequence' ? sequenceDefaults() : {}),
   duration: 500,
   speed: 40,
   direction: 'forward',
@@ -73,6 +83,7 @@ export const makeRule = (): Rule => ({
   enabled: true,
   className: 'person',
   confidence: 0.7,
+  region: 'anywhere',
   minDuration: 500,
   cooldown: 2000,
   interval: 3000,
@@ -89,4 +100,18 @@ export const makeProject = (): Project => ({
   selectedClasses: ['person'],
 });
 
+
+
+export const sequenceDefaults = () => ({
+  steps: ['#51D691', '#4DA3FF', '#FFD84D', '#E83AB8'].map((color, i) => ({ light: i + 1, color })),
+  stepDurationMs: 250, repeatCount: 3, clearPrevious: true, clearWhenFinished: true,
+});
+export function validTailSequence(a: Partial<Action>): boolean {
+  return Array.isArray(a.steps) && a.steps.length <= 4 &&
+    a.steps.every(s => s && [1, 2, 3, 4].includes(s.light) && typeof s.color === 'string' && /^#[0-9a-f]{6}$/i.test(s.color)) &&
+    new Set(a.steps.map(s => s.light)).size === a.steps.length &&
+    Number.isInteger(a.repeatCount) && a.repeatCount! >= 1 && a.repeatCount! <= 20 &&
+    Number.isInteger(a.stepDurationMs) && a.stepDurationMs! >= 50 && a.stepDurationMs! <= 10000 &&
+    typeof a.clearPrevious === 'boolean' && typeof a.clearWhenFinished === 'boolean';
+}
 

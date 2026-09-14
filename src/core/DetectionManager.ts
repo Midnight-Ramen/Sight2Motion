@@ -1,4 +1,4 @@
-import type { Detection } from './types';
+import type { Detection, DetectionRegion } from './types';
 export interface DetectionState {
   since: number;
   lastSeen: number;
@@ -15,8 +15,9 @@ export class DetectionManager {
     className: string,
     threshold: number,
     now: number,
+    region: DetectionRegion = 'anywhere',
   ): DetectionState {
-    const visible = detections.some((d) => d.className === className && d.confidence >= threshold);
+    const visible = detections.some((d) => d.className === className && d.confidence >= threshold && (region === 'anywhere' || d.region === region));
     const old = this.states.get(key);
     const state = {
       visible,
@@ -32,3 +33,4 @@ export class DetectionManager {
     this.states.clear();
   }
 }
+

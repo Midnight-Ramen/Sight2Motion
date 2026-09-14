@@ -1,4 +1,4 @@
-import { actionDefinitions, type Project } from './types';
+import { actionDefinitions, validTailSequence, type Action, type Project } from './types';
 const KEY = 'vision-robot-studio.projects.v1';
 const number = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -34,6 +34,7 @@ export function parseProject(text: string): Project {
       typeof r.className !== 'string' ||
       r.className.length > 100 ||
       typeof r.enabled !== 'boolean' ||
+      (r.region !== undefined && !['anywhere', 'left', 'center', 'right'].includes(String(r.region))) ||
       !number(r.confidence, 0.1, 1) ||
       !number(r.minDuration, 0, 60000) ||
       !number(r.cooldown, 100, 60000) ||
@@ -51,6 +52,7 @@ export function parseProject(text: string): Project {
         ids.has(a.id) ||
         !Object.hasOwn(actionDefinitions, String(a.kind)) ||
         typeof a.enabled !== 'boolean' ||
+        (a.kind === 'tailLightSequence' && !validTailSequence(a as Partial<Action>)) ||
         (a.tailLights !== undefined && (!Array.isArray(a.tailLights) || a.tailLights.length > 4 || a.tailLights.some(v => ![1, 2, 3, 4].includes(v as number)))) ||
         typeof a.color !== 'string' ||
         !/^#[0-9a-f]{6}$/i.test(a.color) ||
@@ -89,6 +91,7 @@ export function parseProject(text: string): Project {
       enabled: r.enabled,
       className: r.className,
       confidence: r.confidence,
+      region: r.region ?? 'anywhere',
       minDuration: r.minDuration,
       cooldown: r.cooldown,
       interval: r.interval,
@@ -99,6 +102,11 @@ export function parseProject(text: string): Project {
         enabled: a.enabled,
         color: a.color,
         ...(a.tailLights !== undefined ? { tailLights: [...new Set(a.tailLights)] } : {}),
+        ...(a.kind === 'tailLightSequence' ? {
+          steps: a.steps!.map(s => ({ light: s.light, color: s.color })),
+          stepDurationMs: a.stepDurationMs, repeatCount: a.repeatCount,
+          clearPrevious: a.clearPrevious, clearWhenFinished: a.clearWhenFinished,
+        } : {}),
         duration: a.duration,
         speed: a.speed,
         direction: a.direction,
@@ -131,5 +139,7 @@ export class ProjectStorage {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 }
+
+
 
 
