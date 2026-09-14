@@ -1900,6 +1900,10 @@ html {
 .project-objects h3{margin:0 0 12px;font-size:16px}.project-object-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .project-object-chip{display:inline-flex;align-items:center;gap:5px;background:#eef3e9;border-radius:16px;padding:4px 10px;font-size:12px}
 .project-object-chip button{border:0;background:transparent;padding:2px 4px;font-size:16px}
+.model-body > label > select, .model-body > label > input[type=url] { width:100%; min-width:0; margin-top:6px; }
+.model-body > label { display:block; font-size:12px; }
+.model-body > [role=status], .model-body > small, .condition > small { display:block; margin-top:8px; font-size:12px; line-height:1.5; }
+.detection-chip.top-prediction { font-weight:700; border:1px solid #51d691; background:#e3f5e9; }
 .object-picker summary{cursor:pointer;font-weight:600;padding:8px 0}.object-picker input[type=search]{width:100%;margin-top:6px;padding:8px;border:1px solid #ccd7c6;border-radius:6px}
 .object-picker p,.project-objects>p,.vision-check p{font-size:12px;line-height:1.5}.object-picker-options{max-height:220px;overflow:auto;display:grid;gap:8px;margin:8px 0}
 .object-picker-options label,.vision-check-toggle{display:flex;align-items:center;gap:8px;font-size:13px}.vision-check-toggle{margin-top:14px}

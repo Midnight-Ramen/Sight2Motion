@@ -1,4 +1,5 @@
 import { actionDefinitions, validTailSequence, type Action, type Project } from './types';
+import { normalizeTeachableMachineUrl } from './TeachableMachineUrl';
 const KEY = 'vision-robot-studio.projects.v1';
 const number = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -14,6 +15,8 @@ export function parseProject(text: string): Project {
     typeof p.name !== 'string' ||
     p.name.length > 100 ||
     p.robotType !== 'mock-finch' ||
+    (p.visionProvider !== undefined && !['yolo', 'teachable-machine'].includes(String(p.visionProvider))) ||
+    (p.teachableMachineUrl !== undefined && (typeof p.teachableMachineUrl !== 'string' || p.teachableMachineUrl.length > 2048)) ||
     !obj(p.vision) ||
     !number(p.vision.confidence, 0.1, 1) ||
     !number(p.vision.fps, 1, 30) ||
@@ -35,6 +38,8 @@ export function parseProject(text: string): Project {
       r.className.length > 100 ||
       typeof r.enabled !== 'boolean' ||
       (r.region !== undefined && !['anywhere', 'left', 'center', 'right'].includes(String(r.region))) ||
+      (r.distance !== undefined && !['any', 'far', 'near'].includes(String(r.distance))) ||
+      (r.nearThreshold !== undefined && !number(r.nearThreshold, 0.03, 0.4)) ||
       !number(r.confidence, 0.1, 1) ||
       !number(r.minDuration, 0, 60000) ||
       !number(r.cooldown, 100, 60000) ||
@@ -52,6 +57,7 @@ export function parseProject(text: string): Project {
         ids.has(a.id) ||
         !Object.hasOwn(actionDefinitions, String(a.kind)) ||
         typeof a.enabled !== 'boolean' ||
+        (a.mode !== undefined && !['timed', 'continuous'].includes(String(a.mode))) ||
         (a.kind === 'tailLightSequence' && !validTailSequence(a as Partial<Action>)) ||
         (a.tailLights !== undefined && (!Array.isArray(a.tailLights) || a.tailLights.length > 4 || a.tailLights.some(v => ![1, 2, 3, 4].includes(v as number)))) ||
         typeof a.color !== 'string' ||
@@ -69,12 +75,15 @@ export function parseProject(text: string): Project {
     p.selectedClasses.length > 80 || p.selectedClasses.some(c => typeof c !== 'string' || !c.trim() || c.length > 100)))
     throw new Error('Project objects are not valid.');
   const valid = p as unknown as Project;
+  const teachableMachineUrl = valid.teachableMachineUrl ? normalizeTeachableMachineUrl(valid.teachableMachineUrl) : undefined;
   // Preserve every referenced class, including legacy projects with more than ten objects.
   const selectedClasses = [...new Set([...(valid.selectedClasses ?? []), ...valid.rules.map(r => r.className)])];
   if (!selectedClasses.length) selectedClasses.push('person');
   // Keep only our schema: extra imported fields (including media) are discarded.
   return {
     version: 1,
+    visionProvider: valid.visionProvider ?? 'yolo',
+    ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
     id: valid.id,
     name: valid.name,
@@ -92,6 +101,8 @@ export function parseProject(text: string): Project {
       className: r.className,
       confidence: r.confidence,
       region: r.region ?? 'anywhere',
+      distance: r.distance ?? 'any',
+      nearThreshold: r.nearThreshold ?? 0.12,
       minDuration: r.minDuration,
       cooldown: r.cooldown,
       interval: r.interval,
@@ -100,6 +111,7 @@ export function parseProject(text: string): Project {
         id: a.id,
         kind: a.kind,
         enabled: a.enabled,
+        mode: a.mode ?? 'timed',
         color: a.color,
         ...(a.tailLights !== undefined ? { tailLights: [...new Set(a.tailLights)] } : {}),
         ...(a.kind === 'tailLightSequence' ? {

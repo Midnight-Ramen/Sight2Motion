@@ -35,7 +35,7 @@ Mock movement is timed wheel animation, not calibrated travel distance. Sound is
 
 ## Models and local processing
 
-`npm run setup:model` downloads a 12.8 MB YOLOv8n ONNX export from [webml/yolov8n](https://huggingface.co/webml/yolov8n/blob/main/onnx/yolov8n.onnx), checks its SHA-256, and stores it at `public/models/yolov8n.onnx`. Downloading weights requires internet; running inference does not. Model binaries are excluded from git; rerun setup after cloning. The default weights were downloaded in this workspace already.
+The default 12.8 MB YOLOv8n ONNX model is included in this repository at `public/models/yolov8n.onnx`, so **Load local model** works after cloning. `npm run setup:model` verifies its SHA-256 and, if missing or changed, downloads the original export from [webml/yolov8n](https://huggingface.co/webml/yolov8n/blob/main/onnx/yolov8n.onnx). Downloading weights requires internet; running inference does not. Other ONNX model files remain excluded from git.
 
 You can instead choose a compatible `.onnx` file with the folder button. The implemented contract is **YOLOv8 COCO object detection, float32 input `[1,3,640,640]`, output `[1,84,N]`, no embedded NMS, 80 COCO labels**. Other label sets, dynamic image sizes, YOLOv5 objectness tensors, segmentation, and NMS-integrated exports are not supported yet. Model filenames are not evidence of compatibility.
 

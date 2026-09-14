@@ -80,6 +80,7 @@ export class MockRobotAdapter implements RobotAdapter {
         this.state.left = action.direction === 'backward' || action.direction === 'left' ? -s : s;
         this.state.right = action.direction === 'backward' || action.direction === 'right' ? -s : s;
         this.emit();
+        if (action.mode === 'continuous') break;
         try {
           await delay(action.duration, signal);
         } finally {

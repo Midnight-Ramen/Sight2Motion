@@ -1,4 +1,5 @@
 import { withDetectionRegions, REGION_BOUNDARIES } from './core/DetectionRegions';
+import { detectionAreaRatio } from './core/DetectionDistance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Aperture,
@@ -32,7 +33,9 @@ import {
   Zap,
 } from 'lucide-react';
 import { CameraManager } from './core/CameraManager';
-import { YoloVisionEngine } from './core/VisionEngine';
+import { VisionSession } from './core/VisionSession';
+import { capabilitiesFor } from './core/VisionCapabilities';
+import { normalizeTeachableMachineUrl } from './core/TeachableMachineUrl';
 import { RuleEngine } from './core/RuleEngine';
 import { ActionEngine } from './core/ActionEngine';
 import { MockRobotAdapter, type MockState } from './core/RobotAdapter';
@@ -42,6 +45,9 @@ import {
   makeProject,
   makeRule,
   type Detection,
+  type VisionResult,
+  type VisionProviderKind,
+  hasBoundingBox,
   type Project,
   type Action,
 } from './core/types';
@@ -114,7 +120,14 @@ export default function App() {
   );
   const [rules] = useState(() => new RuleEngine());
   const [camera] = useState(() => new CameraManager());
-  const [vision] = useState(() => new YoloVisionEngine());
+  const [vision] = useState(() => new VisionSession());
+  const [availableClasses, setAvailableClasses] = useState<readonly string[]>(() => vision.getClasses());
+  const providerKind = project.visionProvider ?? 'yolo';
+  const visionCapabilities = capabilitiesFor(providerKind);
+  const [tmUrlInput, setTmUrlInput] = useState(project.teachableMachineUrl ?? '');
+  const [modelError, setModelError] = useState(false);
+  const modelVersion = useRef(0);
+  const modelWork = useRef<Promise<unknown>>(Promise.resolve());
   const [storage] = useState(() => new ProjectStorage());
   const [cameraOn, setCameraOn] = useState(false),
     [cameraBusy, setCameraBusy] = useState(false);
@@ -125,7 +138,7 @@ export default function App() {
     [backend, setBackend] = useState('Not loaded');
   const [demo, setDemo] = useState(false),
     [demoVisible, setDemoVisible] = useState(true);
-  const [detections, setDetections] = useState<Detection[]>([]),
+  const [detections, setDetections] = useState<VisionResult[]>([]),
     [measuredFps, setMeasuredFps] = useState(0);
   const [notice, setNotice] = useState(''),
     [showLog, setShowLog] = useState(true),
@@ -184,6 +197,9 @@ export default function App() {
     rules.reset();
     void actions.stop();
   }, [actions, rules]);
+  useEffect(() => {
+    if (!connected) pause();
+  }, [connected, pause]);
   const stop = useCallback(() => {
     pause();
     log('STOP requested — AI is paused.');
@@ -208,7 +224,11 @@ export default function App() {
       window.removeEventListener('pagehide', pause);
       camera.stop();
       pause();
-      void inference.current?.finally(() => vision.dispose());
+      ++modelVersion.current;
+      void modelWork.current.catch(() => {}).then(async () => {
+        await inference.current?.catch(() => {});
+        await vision.dispose();
+      });
     };
   }, [stop, pause, camera, vision]);
   useEffect(() => {
@@ -222,19 +242,20 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
   const consume = useCallback(
-    (items: Detection[]) => {
+    (items: VisionResult[]) => {
       setDetections(items);
       if (
         !aiRef.current ||
         !(robot.current === mockRobot ? mockRobot.state.connected : finch.connected)
       )
         return;
-      const triggered = rules.evaluate(projectRef.current.rules, items, performance.now());
-      if (actions.busy) return;
+      const triggered = rules.evaluate(projectRef.current.rules, items, performance.now(), capabilitiesFor(projectRef.current.visionProvider));
+      const wasBusy = actions.busy;
+      void actions.updateRules(triggered, rules.activeRules);
+      if (wasBusy) return;
       if (triggered.length) {
         triggered.forEach((r) => log(`Running “${r.name}”`));
         setLastRule(triggered.map((r) => r.name).join(', '));
-        void actions.run(triggered.flatMap((r) => r.actions));
       }
     },
     [actions, robot, mockRobot, finch, rules, log],
@@ -250,7 +271,7 @@ export default function App() {
         return;
       }
       try {
-        let items: Detection[] = [];
+        let items: VisionResult[] = [];
         if (demo)
           items =
             demoVisible && projectRef.current.vision.confidence <= 0.94 ? [demoDetection] : [];
@@ -270,12 +291,18 @@ export default function App() {
           }
         }
         if (version !== loopVersion.current) return;
-        items = withDetectionRegions(items, demo ? 1280 : video.current?.videoWidth || 1280);
+        if (vision.capabilities.boundingBoxes) {
+        items = withDetectionRegions(items.filter(hasBoundingBox), demo ? 1280 : video.current?.videoWidth || 1280);
+        items = items.filter(hasBoundingBox).map(d => ({ ...d, areaRatio: detectionAreaRatio(d,
+          demo ? 1280 : video.current?.videoWidth || 1280,
+          demo ? 720 : video.current?.videoHeight || 720) }));
+        }
         consume(items);
-        const classes = [...new Set(items.map((d) => d.className))].sort().join(',');
+        const qualifying = items.filter(d => d.confidence >= projectRef.current.vision.confidence);
+        const classes = [...new Set(qualifying.map((d) => d.className))].sort().join(',');
         if (classes && classes !== oldClasses)
           log(
-            `${demo ? 'Demo: ' : ''}${items[0].className} detected · ${Math.round(items[0].confidence * 100)}% · ${items[0].region?.toUpperCase()}`,
+            `${demo ? 'Demo: ' : ''}${qualifying[0].className} detected · ${Math.round(qualifying[0].confidence * 100)}%${qualifying[0].region ? ` · ${qualifying[0].region.toUpperCase()}` : ''}`,
           );
         oldClasses = classes;
         setMeasuredFps(
@@ -290,8 +317,9 @@ export default function App() {
         if (version !== loopVersion.current) return;
         pause();
         setModelReady(false);
+        setModelError(true);
         setNotice(
-          'Detection paused. Use a static YOLOv8 COCO ONNX model (640 × 640, without NMS), then load it again.',
+          vision.capabilities.boundingBoxes ? 'Detection paused. Use a static YOLOv8 COCO ONNX model (640 × 640, without NMS), then load it again.' : "Image classification paused. Reload your Teachable Machine model and try again.",
         );
         return;
       }
@@ -314,6 +342,7 @@ export default function App() {
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
+    if (!visionCapabilities.boundingBoxes) return;
     if (project.rules.some(r => r.enabled && r.region && r.region !== 'anywhere')) {
       ctx.save();
       ctx.strokeStyle = 'rgba(255,255,255,0.35)';
@@ -328,7 +357,7 @@ export default function App() {
       ctx.restore();
     }
     if (!project.vision.visualize) return;
-    for (const d of detections) {
+    for (const d of detections.filter(hasBoundingBox)) {
       ctx.strokeStyle = '#90efaa';
       ctx.lineWidth = 3;
       ctx.strokeRect(d.x, d.y, d.width, d.height);
@@ -339,7 +368,7 @@ export default function App() {
       ctx.fillStyle = '#17392c';
       ctx.fillText(text, d.x + 12, d.y - 10);
     }
-  }, [detections, project.vision.visualize, project.rules, demo]);
+  }, [detections, project.vision.visualize, project.rules, demo, visionCapabilities]);
   async function connectCamera() {
     pause();
     setDemo(false);
@@ -364,28 +393,76 @@ export default function App() {
       setCameraBusy(false);
     }
   }
+  function resetModel(kind: VisionProviderKind) {
+    pause();
+    setDemo(false);
+    setModelReady(false);
+    setModelBusy(false);
+    setModelError(false);
+    setBackend('Not loaded');
+    setDetections([]);
+    setAvailableClasses([]);
+    ++loopVersion.current;
+    const version = ++modelVersion.current;
+    const work = modelWork.current.catch(() => {}).then(async () => {
+      await inference.current?.catch(() => {});
+      if (version !== modelVersion.current) return;
+      await vision.select(kind);
+      if (version === modelVersion.current) setAvailableClasses([...vision.getClasses()]);
+    });
+    modelWork.current = work.catch(() => {});
+  }
+  function changeProvider(kind: VisionProviderKind) {
+    resetModel(kind);
+    edit({ ...project, visionProvider: kind });
+  }
   async function loadModel(file?: File) {
     pause();
     setDemo(false);
     setModelBusy(true);
     setModelReady(false);
+    setModelError(false);
+    setDetections([]);
     setNotice('');
     ++loopVersion.current;
-    try {
-      await inference.current;
-      const result = await vision.load(
-        file ? new Uint8Array(await file.arrayBuffer()) : './models/yolov8n.onnx',
-      );
+    const version = ++modelVersion.current;
+    const kind = providerKind;
+    const previous = modelWork.current;
+    const work = (async () => {
+      await previous.catch(() => {});
+      await inference.current?.catch(() => {});
+      if (version !== modelVersion.current) return;
+      const model = kind === 'teachable-machine' ? normalizeTeachableMachineUrl(tmUrlInput) :
+        file ? new Uint8Array(await file.arrayBuffer()) : './models/yolov8n.onnx';
+      await vision.select(kind);
+      const result = await vision.load(model);
+      if (version !== modelVersion.current) return;
+      const labels = [...vision.getClasses()];
+      setAvailableClasses(labels);
+      setProject(current => {
+        const selected = current.selectedClasses.filter(c => labels.includes(c));
+        return { ...current, visionProvider: kind,
+          ...(kind === 'teachable-machine' ? { teachableMachineUrl: model as string } : {}),
+          selectedClasses: selected.length ? selected : labels.slice(0, kind === 'yolo' ? 1 : 10) };
+      });
+      setDirty(true);
       setBackend(result);
       setModelReady(true);
       log(`AI model ready · ${result}`);
+    })();
+    modelWork.current = work;
+    try {
+      await work;
     } catch {
+      if (version !== modelVersion.current) return;
+      setModelError(true);
       setBackend('Not loaded');
       setNotice(
-        'Model could not load. Choose a YOLOv8 COCO .onnx file exported at 640 × 640 without NMS. Open the guide for instructions.',
+        kind === 'teachable-machine' ? "We couldn't load this Teachable Machine model. Check the model link and try again." :
+          'Model could not load. Choose a YOLOv8 COCO .onnx file exported at 640 × 640 without NMS. Open the guide for instructions.',
       );
     } finally {
-      setModelBusy(false);
+      if (version === modelVersion.current) setModelBusy(false);
     }
   }
   function toggleAI() {
@@ -408,6 +485,7 @@ export default function App() {
     log('AI enabled. Your rules are listening.');
   }
   function startDemo() {
+    if (providerKind !== 'yolo') changeProvider('yolo');
     pause();
     camera.stop();
     setCameraOn(false);
@@ -464,6 +542,7 @@ export default function App() {
     rules.reset();
     setHardwareBusy(true);
     try {
+      await actions.stop();
       const ok = await actions.run([action]);
       if (ok) log('Hardware test request completed. Please observe the physical Finch.');
     } finally {
@@ -476,6 +555,9 @@ export default function App() {
   }
   function replaceProject(p: Project) {
     pause();
+    if ((p.visionProvider ?? 'yolo') !== providerKind || p.teachableMachineUrl !== project.teachableMachineUrl)
+      resetModel(p.visionProvider ?? 'yolo');
+    setTmUrlInput(p.teachableMachineUrl ?? '');
     setProject(p);
     setDirty(false);
     setLastRule('');
@@ -623,7 +705,7 @@ export default function App() {
               label: 'Load AI model',
               done: modelReady || demo,
               icon: Sparkles,
-              action: () => modelInput.current?.click(),
+              action: () => providerKind === 'yolo' ? modelInput.current?.click() : document.getElementById('tm-model-url')?.focus(),
             },
             {
               label: 'Connect robot',
@@ -751,10 +833,10 @@ export default function App() {
             <div className="preview-toolbar">
               <span>
                 <ScanLine size={16} />
-                <b>{detections.length}</b> objects detected
+                <b>{detections.length}</b> {visionCapabilities.boundingBoxes ? 'objects detected' : 'class predictions'}
               </span>
               <span className="fps">{measuredFps.toFixed(0)} FPS</span>
-              <label className="visualization-toggle">
+              {visionCapabilities.boundingBoxes && <label className="visualization-toggle">
                 <input
                   type="checkbox"
                   checked={project.vision.visualize}
@@ -764,14 +846,14 @@ export default function App() {
                 />
                 <Eye size={16} />
                 Show boxes
-              </label>
+              </label>}
             </div>
             <div className="detection-strip">
               {detections.length ? (
                 detections.map((d, i) => (
                   <span
-                    className="detection-chip"
-                    title={`Box: x ${Math.round(d.x)}, y ${Math.round(d.y)}, width ${Math.round(d.width)}, height ${Math.round(d.height)}`}
+                    className={`detection-chip ${!visionCapabilities.boundingBoxes && i === 0 ? 'top-prediction' : ''}`}
+                    title={hasBoundingBox(d) ? `Box: x ${Math.round(d.x)}, y ${Math.round(d.y)}, width ${Math.round(d.width)}, height ${Math.round(d.height)}` : undefined}
                     key={i}
                   >
                     <span />
@@ -780,7 +862,7 @@ export default function App() {
                   </span>
                 ))
               ) : (
-                <span className="muted">Detected objects will appear here</span>
+                <span className="muted">{visionCapabilities.boundingBoxes ? 'Detected objects' : 'Class predictions'} will appear here</span>
               )}
               {demo && (
                 <button className="text-button" onClick={() => setDemoVisible((v) => !v)}>
@@ -896,16 +978,34 @@ export default function App() {
                 <span className="tiny-tag">LOCAL</span>
               </div>
               <div className="model-body">
+                <label>AI model
+                  <select aria-label="AI model" value={providerKind} onChange={e => changeProvider(e.target.value as VisionProviderKind)}>
+                    <option value="yolo">YOLOv8n — Object Detection</option>
+                    <option value="teachable-machine">Teachable Machine — Image Classification</option>
+                  </select>
+                </label>
                 <div className="model-name">
                   <span className="model-icon">
                     <ScanLine size={20} />
                   </span>
                   <div>
-                    <strong>YOLOv8n</strong>
-                    <span>Object detection · 80 classes</span>
+                    <strong>{providerKind === 'yolo' ? 'YOLOv8n' : 'Teachable Machine'}</strong>
+                    <span>{visionCapabilities.boundingBoxes ? 'Object detection' : 'Image Classification'} · {availableClasses.length} classes</span>
                   </div>
                   <span className={`model-indicator ${modelReady ? 'ready' : ''}`} />
                 </div>
+                {providerKind === 'teachable-machine' && <label>Model URL
+                  <input id="tm-model-url" aria-label="Model URL" type="url" value={tmUrlInput}
+                    placeholder="https://teachablemachine.withgoogle.com/models/.../"
+                    onChange={e => {
+                      const value = e.target.value;
+                      setTmUrlInput(value);
+                      resetModel(providerKind);
+                      let teachableMachineUrl: string | undefined;
+                      try { teachableMachineUrl = normalizeTeachableMachineUrl(value); } catch { /* Keep invalid drafts out of saved projects. */ }
+                      edit({ ...project, teachableMachineUrl });
+                    }} />
+                </label>}
                 <div className="model-load">
                   <button disabled={modelBusy} onClick={() => loadModel()}>
                     {modelBusy ? (
@@ -913,19 +1013,24 @@ export default function App() {
                     ) : (
                       <Download size={14} />
                     )}{' '}
-                    {modelBusy ? 'Loading…' : modelReady ? 'Reload model' : 'Load local model'}
+                    {modelBusy ? 'Loading…' : modelReady ? 'Reload model' : providerKind === 'yolo' ? 'Load local model' : 'Load Model'}
                   </button>
-                  <button
+                  {providerKind === 'yolo' && <button
                     disabled={modelBusy}
                     title="Choose ONNX model file"
                     aria-label="Choose ONNX model file"
                     onClick={() => modelInput.current?.click()}
                   >
                     <FolderOpen size={16} />
-                  </button>
+                  </button>}
                 </div>
+                <span role="status">{modelBusy ? 'Loading…' : modelReady ? 'Ready' : modelError ? 'Error' : 'Not loaded'}</span>
+                {!visionCapabilities.boundingBoxes && modelReady && <small>
+                  ✓ Custom classes · ✓ Confidence rules · ✓ Robot actions<br />
+                  — Bounding boxes · — Location · — Near / Far
+                </small>}
                 <span className="backend">{demo ? 'Demo bypasses AI inference' : backend}</span>
-                <label className="slider-label">
+                {visionCapabilities.boundingBoxes && <label className="slider-label">
                   Confidence threshold <b>{Math.round(project.vision.confidence * 100)}%</b>
                   <input
                     type="range"
@@ -940,7 +1045,7 @@ export default function App() {
                       })
                     }
                   />
-                </label>
+                </label>}
                 <div className="settings-row">
                   <label>
                     Inference speed
@@ -982,7 +1087,8 @@ export default function App() {
                 </div>
               </div>
             </section>
-            <ProjectObjects key={project.id} selected={project.selectedClasses} supported={vision.getClasses()}
+            <ProjectObjects key={`${project.id}:${providerKind}`} selected={project.selectedClasses} supported={availableClasses}
+              capabilities={visionCapabilities}
               rules={project.rules} detections={detections} threshold={project.vision.confidence}
               live={cameraOn && modelReady && !demo}
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
@@ -1015,7 +1121,9 @@ export default function App() {
             <RuleCard
               key={r.id}
               rule={r}
-              selectedClasses={project.selectedClasses}
+              detections={detections}
+              selectedClasses={visionCapabilities.boundingBoxes ? project.selectedClasses : project.selectedClasses.filter(c => availableClasses.includes(c))}
+              visionCapabilities={visionCapabilities}
               index={i}
               capabilities={robot.getCapabilities()}
               onChange={(rule) =>

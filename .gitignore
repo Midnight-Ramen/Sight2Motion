@@ -2,3 +2,4 @@ node_modules/
 dist/
 test-results/
 public/models/*.onnx
+!public/models/yolov8n.onnx

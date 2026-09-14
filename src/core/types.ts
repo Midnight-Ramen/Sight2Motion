@@ -1,4 +1,5 @@
 export type DetectionRegion = 'anywhere' | 'left' | 'center' | 'right';
+export type DetectionDistance = 'any' | 'far' | 'near';
 export interface Detection {
   className: string;
   confidence: number;
@@ -9,12 +10,24 @@ export interface Detection {
   centerX: number;
   centerY: number;
   region?: Exclude<DetectionRegion, 'anywhere'>;
+  areaRatio?: number;
 }
+export interface ClassificationResult {
+  className: string;
+  confidence: number;
+  region?: never;
+  areaRatio?: never;
+}
+export type VisionResult = Detection | ClassificationResult;
+export const hasBoundingBox = (result: VisionResult): result is Detection => 'x' in result;
+export type VisionProviderKind = 'yolo' | 'teachable-machine';
 export type ActionKind = 'beak' | 'tail' | 'tailLightSequence' | 'move' | 'sound' | 'wait' | 'stop';
+export type MotionMode = 'timed' | 'continuous';
 export interface Action {
   id: string;
   kind: ActionKind;
   enabled: boolean;
+  mode?: MotionMode;
   color: string;
   tailLights?: number[];
   steps?: { light: number; color: string }[];
@@ -35,6 +48,8 @@ export interface Rule {
   className: string;
   confidence: number;
   region: DetectionRegion;
+  distance: DetectionDistance;
+  nearThreshold: number;
   minDuration: number;
   cooldown: number;
   interval: number;
@@ -48,6 +63,8 @@ export interface VisionSettings {
   model: string;
 }
 export interface Project {
+  visionProvider: VisionProviderKind;
+  teachableMachineUrl?: string;
   version: 1;
   id: string;
   name: string;
@@ -69,6 +86,7 @@ export const makeAction = (kind: ActionKind = 'beak'): Action => ({
   id: crypto.randomUUID(),
   kind,
   enabled: true,
+  mode: 'timed',
   color: '#51d691',
   tailLights: kind === 'tail' ? [] : [1, 2, 3, 4],
   ...(kind === 'tailLightSequence' ? sequenceDefaults() : {}),
@@ -84,6 +102,8 @@ export const makeRule = (): Rule => ({
   className: 'person',
   confidence: 0.7,
   region: 'anywhere',
+  distance: 'any',
+  nearThreshold: 0.12,
   minDuration: 500,
   cooldown: 2000,
   interval: 3000,
@@ -91,6 +111,7 @@ export const makeRule = (): Rule => ({
   actions: [makeAction()],
 });
 export const makeProject = (): Project => ({
+  visionProvider: 'yolo',
   version: 1,
   id: crypto.randomUUID(),
   name: 'My first vision project',

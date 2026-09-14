@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Detection, Rule } from '../core/types';
+import type { VisionResult, Rule } from '../core/types';
+import { YOLO_CAPABILITIES, type VisionCapabilities } from '../core/VisionCapabilities';
 import { DetectionManager } from '../core/DetectionManager';
 import { objectLabel, removalMessage } from '../core/ProjectObjects';
 
-export function ProjectObjects({ selected, supported, rules, detections, threshold, live, onChange }: {
-  selected: string[]; supported: readonly string[]; rules: Rule[]; detections: Detection[];
+export function ProjectObjects({ selected, supported, rules, detections, threshold, live, onChange, capabilities = YOLO_CAPABILITIES }: {
+  selected: string[]; supported: readonly string[]; rules: Rule[]; detections: VisionResult[];
+  capabilities?: VisionCapabilities;
   threshold: number; live: boolean; onChange: (selected: string[]) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -34,7 +36,7 @@ export function ProjectObjects({ selected, supported, rules, detections, thresho
   };
   const matches = supported.filter(c => c.toLowerCase().includes(query.trim().toLowerCase()));
   return <section className="project-objects" aria-label="Objects for this project">
-    <h3>Objects for this project</h3>
+    <h3>{capabilities.boundingBoxes ? 'Objects for this project' : 'Classes in this model'}</h3>
     <div className="project-object-chips">{selected.map(name => <span key={name} className="project-object-chip">
       {objectLabel(name)}{!supported.includes(name) && ' · unavailable in this model'}
       <button aria-label={`Remove ${objectLabel(name)}`} onClick={() => toggle(name)}>×</button>
@@ -46,7 +48,7 @@ export function ProjectObjects({ selected, supported, rules, detections, thresho
       <div className="object-picker-options">{matches.map(name => <label key={name}>
         <input type="checkbox" checked={selected.includes(name)} onChange={() => toggle(name)} />{objectLabel(name)}
       </label>)}</div>
-      {!matches.length && <div role="status"><p>{objectLabel(query.trim())} is not available in this AI model.</p><p>Try another object. Custom object models can be added later.</p></div>}
+      {!matches.length && <div role="status"><p>{supported.length ? `${objectLabel(query.trim())} is not available in this AI model.` : 'Load a model to see its classes.'}</p></div>}
     </details>
     {message && <p role="status">{message}</p>}
     <label className="vision-check-toggle"><input type="checkbox" checked={testing} onChange={e => setTesting(e.target.checked)} /> Test objects</label>

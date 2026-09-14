@@ -1,4 +1,4 @@
-import type { Action, ActionKind } from './types';
+import type { Action, ActionKind, MotionMode } from './types';
 import { delay, type RobotAdapter } from './RobotAdapter';
 import { BirdBrainTransport } from './BirdBrainTransport';
 import { FinchWatchdog, type WheelWatchdog } from './FinchWatchdog';
@@ -16,6 +16,8 @@ export class FinchAdapter implements RobotAdapter {
   private heartbeat: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
   private contacted = false;
+  private motionGeneration = 0;
+  private motionHeartbeat: ReturnType<typeof setTimeout> | undefined;
   constructor(
     private changed: (status: FinchStatus) => void = () => {},
     private transport = new BirdBrainTransport(),
@@ -86,6 +88,8 @@ export class FinchAdapter implements RobotAdapter {
     }, 1000);
   }
   async stop() {
+    ++this.motionGeneration;
+    clearTimeout(this.motionHeartbeat);
     this.transport.cancelPending();
     if (!this.contacted) return;
     try {
@@ -122,20 +126,49 @@ export class FinchAdapter implements RobotAdapter {
       throw new Error('RGB values must be bytes.');
     await this.transport.command(`/hummingbird/out/triled/1/${rgb.join('/')}/${this.slot}`, signal);
   }
-  async setWheelSpeeds(left: number, right: number, duration: number, signal: AbortSignal) {
+  async setWheelSpeeds(left: number, right: number, duration: number, signal: AbortSignal, mode: MotionMode = 'timed') {
     this.requireConnected();
-    // Validation milestone: bounded low-speed motion only, irrespective of imported settings.
+    const persistent = mode === 'continuous';
+    // Keep the existing timed diagnostic limits; continuous motion has a renewable safety deadline.
     if (
-      ![left, right].every((v) => Number.isFinite(v) && Math.abs(v) <= 20) ||
-      !Number.isFinite(duration) ||
-      duration < 1 ||
-      duration > 1000
+      ![left, right].every((v) => Number.isFinite(v) && Math.abs(v) <= (persistent ? 100 : 20)) ||
+      (!persistent && (!Number.isFinite(duration) || duration < 1 || duration > 1000))
     )
-      throw new Error('For hardware validation use at most 20% speed and 1000 ms.');
+      throw new Error(persistent ? 'Choose wheel speeds between -100% and 100%.' : 'For hardware validation use at most 20% speed and 1000 ms.');
     if (signal.aborted) return;
-    await this.watchdog.arm(this.slot, duration);
+    const motion = ++this.motionGeneration;
+    clearTimeout(this.motionHeartbeat);
+    await this.watchdog.arm(this.slot, persistent ? 1000 : duration);
+    if (motion !== this.motionGeneration) return;
     if (signal.aborted) {
       await this.stop();
+      return;
+    }
+    if (persistent) {
+      // Renew only the worker's stop deadline, never the wheel command.
+      const renew = () => {
+        this.motionHeartbeat = setTimeout(async () => {
+          if (motion !== this.motionGeneration) return;
+          try {
+            if (signal.aborted || !this.connected) { await this.stop(); return; }
+            await this.watchdog.arm(this.slot, 1000);
+            if (motion === this.motionGeneration) renew();
+          } catch {
+            if (motion !== this.motionGeneration) return;
+            await this.stop().catch(() => {});
+            this.publish({ connection: 'error', message: 'Wheel safety timer failed. AI paused and STOP attempted.' });
+          }
+        }, 250);
+      };
+      renew();
+      try {
+        await this.transport.command(
+          `/hummingbird/out/wheels/${this.slot}/${Math.round(left)}/${Math.round(right)}/`, signal,
+        );
+      } catch (error) {
+        if (motion === this.motionGeneration) await this.stop().catch(() => {});
+        throw error;
+      }
       return;
     }
     try {
@@ -182,6 +215,7 @@ export class FinchAdapter implements RobotAdapter {
           action.direction === 'backward' || action.direction === 'right' ? -s : s,
           action.duration,
           signal,
+          action.mode ?? 'timed',
         );
         break;
       }

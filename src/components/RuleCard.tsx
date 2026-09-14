@@ -6,8 +6,10 @@ import {
   type Action,
   type ActionKind,
   type Rule,
+  type VisionResult,
 } from '../core/types';
 import { objectLabel } from '../core/ProjectObjects';
+import { classificationRule, compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from '../core/VisionCapabilities';
 export function RuleCard({
   rule,
   index,
@@ -15,7 +17,11 @@ export function RuleCard({
   onDelete,
   capabilities,
   selectedClasses,
+  detections = [],
+  visionCapabilities = YOLO_CAPABILITIES,
 }: {
+  detections?: VisionResult[];
+  visionCapabilities?: VisionCapabilities;
   selectedClasses: string[];
   rule: Rule;
   index: number;
@@ -24,6 +30,10 @@ export function RuleCard({
   capabilities: ActionKind[];
 }) {
   const patch = (p: Partial<Rule>) => onChange({ ...rule, ...p });
+  const currentSizes = detections.filter(d => d.className === rule.className &&
+    d.confidence >= rule.confidence &&
+    (!rule.region || rule.region === 'anywhere' || d.region === rule.region) &&
+    d.areaRatio !== undefined).map(d => `${Math.round(d.areaRatio! * 100)}%`);
   const updateAction = (id: string, p: Partial<Action>) =>
     patch({ actions: rule.actions.map((a) => (a.id === id ? { ...a, ...p } : a)) });
   const reorder = (from: number, to: number) => {
@@ -59,23 +69,50 @@ export function RuleCard({
       <div className="rule-body">
         <div className="condition">
           <span className="eyebrow">WHEN THIS HAPPENS</span>
+          {!compatibleRule(rule, visionCapabilities) && <div role="status">
+            <b>Needs update</b>
+            <p>This model doesn't support Location or Near/Far.</p>
+            <button onClick={() => onChange(classificationRule(rule))}>Convert to classification rule</button>
+          </div>}
+          {!visionCapabilities.boundingBoxes && <small>Image classification recognizes what the camera sees, but not where the object is located.</small>}
           <div className="sentence">
             <b className="keyword">IF</b>
             <select
-              aria-label="Detected class"
-              value={rule.className}
+              aria-label={visionCapabilities.boundingBoxes ? 'Detected class' : 'Class'}
+              value={selectedClasses.includes(rule.className) ? rule.className : ''}
               onChange={(e) => patch({ className: e.target.value })}
             >
+              {!selectedClasses.includes(rule.className) && <option value="" disabled>Choose class (current: {rule.className})</option>}
               {selectedClasses.map((c) => (
                 <option key={c} value={c}>{objectLabel(c)}</option>
               ))}
             </select>
             <span>is detected</span>
           </div>
-          <label>Location <select aria-label="Location" value={rule.region ?? 'anywhere'}
+          {visionCapabilities.regions && <label>Location <select aria-label="Location" value={rule.region ?? 'anywhere'}
             onChange={e => patch({ region: e.target.value as Rule['region'] })}>
             {(['anywhere', 'left', 'center', 'right'] as const).map(region => <option key={region} value={region}>{objectLabel(region)}</option>)}
-          </select></label>
+          </select></label>}
+          {visionCapabilities.apparentDistance && <><label title="Estimated from how large the object appears in the camera.">
+            Distance <select aria-label="Distance" value={rule.distance ?? 'any'}
+              onChange={e => patch({ distance: e.target.value as Rule['distance'] })}>
+              {(['any', 'far', 'near'] as const).map(distance =>
+                <option key={distance} value={distance}>{objectLabel(distance)}</option>)}
+            </select>
+          </label>
+          {(rule.distance ?? 'any') !== 'any' && <div>
+            <label className="confidence">
+              Near when object fills at least <b>{Math.round((rule.nearThreshold ?? 0.12) * 100)}%</b>
+              <input aria-label="Near threshold" type="range" min={3} max={40} step={1}
+                value={Math.round((rule.nearThreshold ?? 0.12) * 100)}
+                onChange={e => patch({ nearThreshold: +e.target.value / 100 })} />
+            </label>
+            <small>Estimated from how large the object appears in the camera.</small>
+            <div><small>{currentSizes.length
+              ? `Current object ${currentSizes.length === 1 ? 'size' : 'sizes'}: ${currentSizes.join(', ')}`
+              : 'No object meets the class, confidence, and location conditions.'}</small></div>
+          </div>}
+          </>}
           <label className="confidence">
             With confidence of at least <b>{Math.round(rule.confidence * 100)}%</b>
             <input
@@ -233,6 +270,14 @@ export function RuleCard({
                 </fieldset>}
                 {a.kind === 'move' && (
                   <>
+                    <label>Movement
+                      <select aria-label={`Action ${i + 1} movement mode`} value={a.mode ?? 'timed'}
+                        onChange={e => updateAction(a.id, { mode: e.target.value as Action['mode'] })}>
+                        <option value="timed">Timed</option>
+                        <option value="continuous">Continuous while rule matches</option>
+                      </select>
+                    </label>
+                    {a.mode === 'continuous' && <small>Keeps moving while this rule remains true.</small>}
                     <select
                       aria-label="Move direction"
                       value={a.direction}
@@ -269,7 +314,7 @@ export function RuleCard({
                     ))}
                   </select>
                 )}
-                {['move', 'wait', 'sound'].includes(a.kind) && (
+                {(['wait', 'sound'].includes(a.kind) || (a.kind === 'move' && a.mode !== 'continuous')) && (
                   <label>
                     Duration (ms)
                     <input
