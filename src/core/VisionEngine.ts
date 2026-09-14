@@ -87,7 +87,10 @@ export class YoloVisionEngine implements VisionEngine {
   async load(model: string | Uint8Array) {
     await this.dispose();
     ort.env.wasm.numThreads = 1;
-    ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: wasmModuleUrl };
+    ort.env.wasm.wasmPaths = {
+      wasm: new URL(wasmUrl, document.baseURI).href,
+      mjs: new URL(wasmModuleUrl, document.baseURI).href,
+    };
     ort.env.wasm.proxy = true;
     const backend = 'WASM worker';
     this.session = await this.createSession(model, ['wasm']);
