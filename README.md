@@ -58,7 +58,7 @@ The milestone tracks **class presence**, not individual objects. Several people 
 
 ## Projects
 
-Save stores named projects in this browser's localStorage. Open lists saved projects. New, Duplicate, Import, and Open preserve unsaved work before switching; if browser storage fails, export JSON first. Files include only the project name, schema version, selected real robot type, model selection, vision settings, rules, and action parameters. No model binaries or camera media are stored. Imported settings are validated, and AI stays paused. Browser storage is local to its origin/profile; export JSON to share or back up projects.
+Save downloads a JSON project file and also stores a browser copy. Students can restore the file using Import project. Reset project and changing the robot dropdown clear rules, conditions, and sensor configuration; save a file first to retain them. Open lists saved projects. New, Duplicate, Import, and Open preserve unsaved work before switching; if browser storage fails, export JSON first. Files include only the project name, schema version, selected real robot type, model selection, vision settings, rules, and action parameters. No model binaries or camera media are stored. Imported settings are validated, and AI stays paused. Browser storage is local to its origin/profile; export JSON to share or back up projects.
 
 ## Development and verification
 

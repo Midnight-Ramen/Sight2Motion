@@ -9,6 +9,8 @@ import {
   type VisionResult,
 } from '../core/types';
 import { objectLabel } from '../core/ProjectObjects';
+import { SensorConditions } from './SensorConditions';
+import type { SensorDescriptor } from '../core/Sensors';
 import { portsFor } from '../core/RobotCapabilities';
 import { classificationRule, compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from '../core/VisionCapabilities';
 export function RuleCard({
@@ -21,10 +23,14 @@ export function RuleCard({
   detections = [],
   visionCapabilities = YOLO_CAPABILITIES,
   robotName = 'Finch 2',
+  sensors = [],
+  sensorsAvailable = false,
 }: {
   detections?: VisionResult[];
   visionCapabilities?: VisionCapabilities;
   robotName?: string;
+  sensors?: SensorDescriptor[];
+  sensorsAvailable?: boolean;
   selectedClasses: string[];
   rule: Rule;
   index: number;
@@ -127,6 +133,8 @@ export function RuleCard({
               onChange={(e) => patch({ confidence: +e.target.value / 100 })}
             />
           </label>
+          <SensorConditions conditions={rule.sensorConditions ?? []} sensors={sensors} available={sensorsAvailable}
+            onChange={sensorConditions => patch({ sensorConditions })} />
           <div className="trigger-pill">
             ↻{' '}
             {rule.mode === 'appearance'
@@ -146,7 +154,7 @@ export function RuleCard({
                   value={rule.mode}
                   onChange={(e) => patch({ mode: e.target.value as Rule['mode'] })}
                 >
-                  <option value="appearance">Once per appearance</option>
+                <option value="appearance">Once per appearance</option>
                   <option value="continuous">While visible</option>
                   <option value="interval">Every N seconds</option>
                   <option value="disappearance">When object disappears</option>

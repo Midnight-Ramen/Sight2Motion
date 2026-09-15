@@ -59,6 +59,8 @@ import { ROBOTS, resetActions } from './core/RobotCapabilities';
 import { FinchAdapter, type FinchStatus } from './core/FinchAdapter';
 import { RobotRouter } from './core/RobotRouter';
 import { HardwareTest } from './components/HardwareTest';
+import { SensorInputs } from './components/SensorInputs';
+import type { SensorState } from './core/Sensors';
 import './styles.css';
 const demoDetection: Detection = {
   className: 'person',
@@ -85,6 +87,9 @@ export default function App() {
   const [ai, setAi] = useState(false),
     aiRef = useRef(false);
   const robotMode = project.robotType;
+  const [sensorState, setSensorState] = useState<SensorState>({});
+  const sensorRef = useRef<SensorState>({});
+  const latestVision = useRef<{ items: VisionResult[]; updatedAt: number }>({ items: [], updatedAt: -Infinity });
   const [hardwareBusy, setHardwareBusy] = useState(false);
   const [finchStatus, setFinchStatus] = useState<FinchStatus>({
     connector: 'not-detected',
@@ -240,15 +245,16 @@ export default function App() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
-  const consume = useCallback(
+  const evaluateInputs = useCallback(
     (items: VisionResult[]) => {
-      setDetections(items);
       if (
         !aiRef.current ||
         !robot.connected
       )
         return;
-      const triggered = rules.evaluate(projectRef.current.rules, items, performance.now(), capabilitiesFor(projectRef.current.visionProvider));
+      const p = projectRef.current;
+      const triggered = rules.evaluate(p.rules, items, performance.now(), capabilitiesFor(p.visionProvider),
+        { state: sensorRef.current, configuration: p.sensorConfiguration ?? [], available: p.robotType === 'hummingbird' && hummingbird.connected });
       const wasBusy = actions.busy;
       void actions.updateRules(triggered, rules.activeRules);
       if (wasBusy) return;
@@ -257,8 +263,32 @@ export default function App() {
         setLastRule(triggered.map((r) => r.name).join(', '));
       }
     },
-    [actions, robot, rules, log],
+    [actions, robot, rules, log, hummingbird],
   );
+  const consume = useCallback((items: VisionResult[]) => {
+    setDetections(items);
+    latestVision.current = { items, updatedAt: performance.now() };
+    evaluateInputs(items);
+  }, [evaluateInputs]);
+  useEffect(() => {
+    sensorRef.current = {};
+    setSensorState({});
+    if (robotMode !== 'hummingbird' || !connected || !project.sensorConfiguration?.length) return;
+    hummingbird.sensors.start(project.sensorConfiguration ?? [], state => {
+      sensorRef.current = state;
+      setSensorState(state);
+    });
+    // Evaluate sensor loss even if inference is slow or a sensor request stalls.
+    const timer = setInterval(() => {
+      setSensorState({ ...sensorRef.current });
+      if (!projectRef.current.rules.some(r => r.sensorConditions?.length)) return;
+      const vision = latestVision.current;
+      evaluateInputs(performance.now() - vision.updatedAt <= 1500 ? vision.items : []);
+    }, 100);
+    const stopSensors = () => hummingbird.sensors.stop();
+    window.addEventListener('pagehide', stopSensors);
+    return () => { clearInterval(timer); stopSensors(); window.removeEventListener('pagehide', stopSensors); };
+  }, [robotMode, connected, project.id, project.sensorConfiguration, hummingbird, evaluateInputs]);
   useEffect(() => {
     const version = ++loopVersion.current;
     let timer: ReturnType<typeof setTimeout>;
@@ -506,7 +536,12 @@ export default function App() {
         'Could not confirm STOP on the previous robot. Check it physically before continuing.',
       );
     } finally {
-      if (updateProject) { setProject(current => ({ ...current, robotType: mode })); setDirty(true); }
+      if (updateProject) {
+        setProject(current => ({ ...current, robotType: mode, rules: [], sensorConfiguration: [] }));
+        setDirty(true);
+        setLastRule('');
+        setNotice('Robot changed. Rules and sensor conditions cleared.');
+      }
       setHardwareBusy(false);
     }
   }
@@ -554,8 +589,12 @@ export default function App() {
     rules.reset();
     setHardwareBusy(true);
     try {
-      const ok = await actions.reset(resetActions(robotMode, project.rules));
-      if (ok) { setNotice('Robot outputs reset. Your rules are kept.'); log('Project outputs reset; rules paused and preserved.'); }
+      const ok = connected ? await actions.reset(resetActions(robotMode, project.rules)) : (await actions.stop(), true);
+      setProject(current => ({ ...current, rules: [], sensorConfiguration: [] }));
+      setDirty(true);
+      setLastRule('');
+      setNotice(ok ? 'Project reset. Rules and sensor conditions cleared.' : 'Rules cleared. Robot output reset could not be confirmed.');
+      log('Project reset; rules and sensor configuration cleared.');
     } finally { setHardwareBusy(false); }
   }
   function replaceProject(p: Project) {
@@ -579,9 +618,10 @@ export default function App() {
   function projectCommand(command: 'new' | 'duplicate' | 'save' | 'load' | 'export') {
     try {
       if (command === 'save') {
+        storage.export(project);
         storage.save(project);
         setDirty(false);
-        setNotice('Project saved on this browser.');
+        setNotice('Project file downloaded. Use Import to open it later.');
       } else if (command === 'load') {
         setSaved(storage.list());
       } else if (command === 'export') storage.export(project);
@@ -626,7 +666,7 @@ export default function App() {
             <Aperture size={25} />
           </span>
           <span>
-            vision<span className="brand-light"> / robot studio</span>
+            Sight<span className="brand-light"> 2 Vision</span>
           </span>
           <span className="beta">BETA</span>
         </a>
@@ -909,7 +949,10 @@ export default function App() {
                 onAction={action => void hardwareAction(action)}
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
-              />            </section>
+              />
+              {robotMode === 'hummingbird' && <SensorInputs configuration={project.sensorConfiguration ?? []} state={sensorState}
+                onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />}
+            </section>
             <section className="panel model-panel">
               <div className="panel-heading">
                 <h2>
@@ -1068,6 +1111,8 @@ export default function App() {
               index={i}
               capabilities={ROBOTS[robotMode].actions}
               robotName={ROBOTS[robotMode].name}
+              sensors={project.sensorConfiguration ?? []}
+              sensorsAvailable={robotMode === 'hummingbird'}
               onChange={(rule) =>
                 edit({
                   ...project,
@@ -1128,7 +1173,7 @@ export default function App() {
         <footer>
           <span>
             <Aperture size={15} />
-            Made for curious minds.
+            Created by Jonathan Delgado
           </span>
           <span>
             Milestone 01 <span>·</span> See → Think → Do

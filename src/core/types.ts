@@ -1,3 +1,4 @@
+import type { SensorCondition, SensorDescriptor } from './Sensors';
 export type DetectionRegion = 'anywhere' | 'left' | 'center' | 'right';
 export type DetectionDistance = 'any' | 'far' | 'near';
 export interface Detection {
@@ -46,6 +47,7 @@ export interface Action {
 }
 export type TriggerMode = 'appearance' | 'continuous' | 'interval' | 'disappearance';
 export interface Rule {
+  sensorConditions?: SensorCondition[];
   id: string;
   name: string;
   enabled: boolean;
@@ -67,6 +69,7 @@ export interface VisionSettings {
   model: string;
 }
 export interface Project {
+  sensorConfiguration?: SensorDescriptor[];
   visionProvider: VisionProviderKind;
   teachableMachineUrl?: string;
   version: 1;
@@ -107,6 +110,7 @@ export const makeAction = (kind: ActionKind = 'beak'): Action => ({
   note: 'C5',
 });
 export const makeRule = (): Rule => ({
+  sensorConditions: [],
   id: crypto.randomUUID(),
   name: 'Say hello',
   enabled: true,
@@ -122,6 +126,7 @@ export const makeRule = (): Rule => ({
   actions: [makeAction()],
 });
 export const makeProject = (): Project => ({
+  sensorConfiguration: [],
   visionProvider: 'yolo',
   version: 1,
   id: crypto.randomUUID(),

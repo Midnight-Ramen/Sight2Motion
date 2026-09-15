@@ -57,8 +57,8 @@ export function HardwareTest({
           STOP
         </button>
       </div>
-      <button disabled={!connected || busy} onClick={onReset}>Reset project</button>
-      <p>Reset pauses rules and turns lights off. {robotType === 'hummingbird' && 'Position servos return to 90°; rotation servos stop. '}Your rules are kept.</p>
+      <button disabled={busy} onClick={onReset}>Reset project</button>
+      <p>Reset deletes all rules and sensor conditions. When connected, lights turn off and motion stops. {robotType === 'hummingbird' && 'Position servos return to 90°. '}Save a project file first to keep your work.</p>
       <p>
         Connect {name} as A in BlueBird first. Test only the outputs you have connected.
       </p>

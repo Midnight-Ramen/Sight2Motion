@@ -1,6 +1,7 @@
 import { DetectionManager } from './DetectionManager';
 import type { VisionResult, Rule } from './types';
 import { compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from './VisionCapabilities';
+import { sensorMatches, type SensorState, type SensorDescriptor } from './Sensors';
 export class RuleEngine {
   private detection = new DetectionManager();
   /** Currently visible and initially qualified; independent of trigger cooldown. */
@@ -11,14 +12,17 @@ export class RuleEngine {
     this.states.clear();
     this.activeRules = [];
   }
-  evaluate(rules: Rule[], detections: VisionResult[], now: number, capabilities: VisionCapabilities = YOLO_CAPABILITIES): Rule[] {
+  evaluate(rules: Rule[], detections: VisionResult[], now: number, capabilities: VisionCapabilities = YOLO_CAPABILITIES,
+    sensors: { state: SensorState; configuration: SensorDescriptor[]; available: boolean } = { state: {}, configuration: [], available: false }): Rule[] {
     const result: Rule[] = [];
     this.activeRules = [];
     for (const rule of rules) {
       if (!rule.enabled || !compatibleRule(rule, capabilities)) continue;
+      const sensorPass = (rule.sensorConditions ?? []).every(condition => sensors.available &&
+        sensors.configuration.some(sensor => sensor.id === condition.sensorId) && sensorMatches(condition, sensors.state, now));
       const presence = this.detection.update(
         rule.id,
-        detections,
+        sensorPass ? detections : [],
         rule.className,
         rule.confidence,
         now,
@@ -39,7 +43,7 @@ export class RuleEngine {
         rule.mode === 'disappearance'
           ? presence.disappeared && state.qualified
           : presence.visible && state.qualified && (rule.mode !== 'appearance' || !state.fired);
-      if (trigger && ready) {
+      if (trigger && ready && sensorPass) {
         result.push(rule);
         state.last = now;
         state.fired = true;

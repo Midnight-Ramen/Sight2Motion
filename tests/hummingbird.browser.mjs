@@ -14,7 +14,7 @@ try {
   await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5174');
   await expect(page.getByLabel('Robot', { exact: true }).locator('option')).toHaveText(['Finch 2', 'Hummingbird Bit']);
   await page.getByLabel('Robot', { exact: true }).selectOption('hummingbird');
-  await expect(page.getByText('Not available for Hummingbird Bit', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
   await expect(page.getByLabel('Action 1 type', { exact: true })).not.toContainText('Beak light');
   await page.getByRole('button', { name: 'Attach to Hummingbird Bit A', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Disconnect from app', exact: true })).toBeVisible();
@@ -38,14 +38,15 @@ try {
   expect(saved.robotType).toBe('hummingbird');
   expect(saved.rules[0].actions[0].mode).toBe('continuous');
   await page.getByRole('button', { name: 'Reset project', exact: true }).click();
-  await expect(page.getByText('Robot outputs reset. Your rules are kept.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Project reset. Rules and sensor conditions cleared.', { exact: true })).toBeVisible();
   expect(commands).toContain('/hummingbird/out/led/3/0/A');
   expect(commands).toContain('/hummingbird/out/triled/2/0/0/0/A');
-  await expect(page.getByLabel('Action 1 type', { exact: true })).toHaveValue('rotationServo');
+  await expect(page.getByLabel('Action 1 type', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add rule', exact: true }).click();
   await page.getByLabel('Robot', { exact: true }).selectOption('finch');
-  await expect(page.getByText('Not available for Finch 2', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Action 1 type', { exact: true })).toHaveCount(0);
   await page.getByLabel('Robot', { exact: true }).selectOption('hummingbird');
-  await expect(page.getByLabel('Action 1 type', { exact: true })).toHaveValue('rotationServo');
+  await expect(page.getByLabel('Action 1 type', { exact: true })).toHaveCount(0);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/hummingbird.png', fullPage: true });
   expect(errors).toEqual([]);

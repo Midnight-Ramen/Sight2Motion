@@ -10,7 +10,7 @@ September 15, 2026 physical acceptance stopped at identity: `GET http://127.0.0.
 
 ## Implemented Hummingbird encoding and STOP
 
-The manual position test uses port 2; rotation uses port 1. **Reset project** pauses rules, stops motion, clears all LED ports, and returns the default position port 2 plus position ports referenced by the rules to 90°. Ports referenced by rotation actions are excluded from position reset. Rules and project settings are preserved. The connector does not report a servo's original angle; 90° is the app's reset position.
+The manual position test uses port 2; rotation uses port 1. **Reset project** pauses rules, stops motion, clears all LED ports, and returns the default position port 2 plus position ports referenced by the rules to 90°. Ports referenced by rotation actions are excluded from position reset. Reset deletes all rules, conditions, and sensor configuration, including when disconnected. Save first to retain them. The connector does not report a servo's original angle; 90° is the app's reset position.
 
 All output requests below use the existing transport and require response body `200`:
 
@@ -31,6 +31,20 @@ Conversions follow the linked Python reference below. Timed actions stop their s
 - Documentation: `README.md`, `BIRDBRAIN.md`.
 
 Validation: 102 unit tests pass. Hummingbird browser transport fixture, Teachable Machine browser fixture, and YOLO WASM browser smoke test pass. Browser robot commands were intercepted; these results do not establish physical output behavior.
+
+## Hummingbird sensor milestone
+
+Inputs 1–3 can be configured as Distance, Light, Sound, or Generic analog. Configuration and each rule's sensor conditions persist in project JSON; legacy projects default both fields to empty arrays. Conditions combine with the existing vision condition using AND. Changing the robot dropdown clears all rules, conditions, and sensor configuration. Importing a saved project restores its robot and rules instead of clearing them.
+
+Reads reuse `HummingbirdAdapter` and `BirdBrainTransport`: `GET http://127.0.0.1:30061/hummingbird/in/sensor/{port}/{slot}`. The reference client's raw integer range is 0–255. Distance uses truncate(raw × 1.17) cm; light uses truncate(raw × 100 / 255)%; sound uses truncate(raw × 200 / 255), capped at 100%; generic analog uses truncate(raw × 100 / 255)%. Conversion is centralized in `Sensors.ts`. Source: [BirdBrain Python input methods and factors](https://github.com/fmorton/BirdBrain-Python-Library/blob/main/src/BirdBrain.py).
+
+Polling is round-robin with 100 ms between completed requests, at most ten reads per second total, with no concurrent reads. Disconnect, robot/project configuration changes, and page exit cancel polling. Missing, failed, or older-than-750-ms readings fail conditions. A 100 ms rule-input check releases continuous outputs even when a read stalls; vision older than 1.5 seconds is not reused by that check. Read errors show Unavailable without exposing transport errors. BlueBird supplies raw analog values, not physical plug detection: a disconnected cable that still produces a numeric value cannot be identified automatically.
+
+Digital/button input configuration is deferred because the reference exposes external ports as analog inputs; built-in micro:bit buttons are not these numbered ports. Boolean equality is supported and tested in the generic condition evaluator. Sensor-only rules are intentionally deferred to keep this milestone focused on the existing vision conditions plus AND.
+
+Validation: 113 unit tests passed, production build passed, and an isolated browser test passed configuration, live values, vision/sensor LED gating, continuous rotation release, unavailable readings, persistence, and switching to Finch. Browser hardware requests were intercepted. Physical acceptance could not start: the identity request to `http://127.0.0.1:30061/hummingbird/in/isHummingbird/static/A` failed with connection refused. No physical output commands were sent for this milestone.
+
+Changed files: `src/core/Sensors.ts`, `SensorProvider.ts`, `HummingbirdAdapter.ts`, `RuleEngine.ts`, `types.ts`, `ProjectStorage.ts`; `src/components/SensorInputs.tsx`, `SensorConditions.tsx`, `RuleCard.tsx`; `src/App.tsx`, `src/styles.css`; `tests/sensors.test.ts`, `tests/sensors.browser.mjs`; `BIRDBRAIN.md`.
 
 ## Firmware and connector preparation
 

@@ -2,6 +2,8 @@ import { BirdBrainTransport } from './BirdBrainTransport';
 import { delay, type RobotAdapter, type RobotStatus } from './RobotAdapter';
 import { ROBOTS, portsFor } from './RobotCapabilities';
 import type { Action } from './types';
+import { normalizeSensor, type SensorDescriptor } from './Sensors';
+import { SensorProvider } from './SensorProvider';
 
 const clamp = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) throw new Error('Choose a valid output value.');
@@ -15,6 +17,11 @@ export const rotationByte = (speed: number) => {
 };
 
 export class HummingbirdAdapter implements RobotAdapter {
+  readonly sensors = new SensorProvider((sensor, signal) => this.readSensor(sensor, signal));
+  async readSensor(sensor: SensorDescriptor, signal: AbortSignal) {
+    if (!this.connected || ![1, 2, 3].includes(sensor.port) || sensor.type === 'digital') return null;
+    return normalizeSensor(sensor.type, await this.transport.request(`/hummingbird/in/sensor/${sensor.port}/${this.slot}`, signal));
+  }
   status: RobotStatus = { connector: 'not-detected', connection: 'disconnected', message: 'Connect Hummingbird Bit A in BlueBird, then attach here.' };
   private generation = 0;
   private identified = false;
@@ -24,7 +31,7 @@ export class HummingbirdAdapter implements RobotAdapter {
     private transport = new BirdBrainTransport(), readonly slot: 'A' | 'B' | 'C' = 'A') {}
   get connected() { return this.status.connection === 'connected'; }
   getCapabilities() { return [...ROBOTS.hummingbird.actions]; }
-  private publish(patch: Partial<RobotStatus>) { this.status = { ...this.status, ...patch }; this.changed({ ...this.status }); }
+  private publish(patch: Partial<RobotStatus>) { this.status = { ...this.status, ...patch }; if (!this.connected) this.sensors.stop(); this.changed({ ...this.status }); }
   private async command(path: string, signal?: AbortSignal, emergency = false) {
     try { await this.transport.command(path, signal, emergency); }
     catch (error) {
@@ -88,6 +95,7 @@ export class HummingbirdAdapter implements RobotAdapter {
     }
   }
   async disconnect() {
+    this.sensors.stop();
     ++this.generation;
     clearTimeout(this.heartbeat);
     try { await this.stop(); }

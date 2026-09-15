@@ -1,5 +1,6 @@
 import { actionDefinitions, validTailSequence, type Action, type Project } from './types';
 import { normalizeTeachableMachineUrl } from './TeachableMachineUrl';
+import { SENSOR_TYPES, SENSOR_OPERATORS, sensorDescriptor } from './Sensors';
 const KEY = 'vision-robot-studio.projects.v1';
 const number = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -27,6 +28,11 @@ export function parseProject(text: string): Project {
   )
     throw new Error('Choose a valid Robot Studio project.');
   const ids = new Set<string>();
+  const configuration = p.sensorConfiguration ?? [];
+  if (!Array.isArray(configuration) || configuration.length > 3 || configuration.some(s => !obj(s) ||
+    !Object.hasOwn(SENSOR_TYPES, String(s.type)) || !Number.isInteger(s.port) || !number(s.port, 1, 3) ||
+    s.id !== `${s.type}:${s.port}`) || new Set(configuration.map(s => s.port)).size !== configuration.length)
+    throw new Error('Sensor configuration is not valid.');
   for (const r of p.rules) {
     if (
       !obj(r) ||
@@ -50,6 +56,13 @@ export function parseProject(text: string): Project {
     )
       throw new Error('A rule in this file is not valid.');
     ids.add(r.id);
+    const conditions = r.sensorConditions ?? [];
+    if (!Array.isArray(conditions) || conditions.length > 10 || conditions.some(c => !obj(c) ||
+      typeof c.id !== 'string' || typeof c.sensorId !== 'string' || !/^(distance|light|sound|analog|digital):[1-3]$/.test(c.sensorId) ||
+      !Object.hasOwn(SENSOR_OPERATORS, String(c.operator)) ||
+      !(typeof c.value === 'boolean' ? c.operator === 'equals' : number(c.value, -10000, 10000))) ||
+      new Set(conditions.map(c => c.id)).size !== conditions.length)
+      throw new Error('A sensor condition is not valid.');
     for (const a of r.actions) {
       if (
         !obj(a) ||
@@ -90,6 +103,7 @@ export function parseProject(text: string): Project {
     visionProvider: valid.visionProvider ?? 'yolo',
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
+    sensorConfiguration: configuration.map(s => sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
     id: valid.id,
     name: valid.name,
     robotType: String(valid.robotType) === 'mock-finch' ? 'finch' : valid.robotType,
@@ -112,6 +126,7 @@ export function parseProject(text: string): Project {
       cooldown: r.cooldown,
       interval: r.interval,
       mode: r.mode,
+      sensorConditions: (r.sensorConditions ?? []).map(c => ({ id: c.id, sensorId: c.sensorId, operator: c.operator, value: c.value })),
       actions: r.actions.map((a) => ({
         id: a.id,
         kind: a.kind,
