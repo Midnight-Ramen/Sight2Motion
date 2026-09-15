@@ -5,7 +5,7 @@ import { normalizeTeachableMachineUrl } from '../src/core/TeachableMachineUrl';
 import { capabilitiesFor, classificationRule, compatibleRule, TM_CAPABILITIES, YOLO_CAPABILITIES } from '../src/core/VisionCapabilities';
 import { RuleEngine } from '../src/core/RuleEngine';
 import { ActionEngine } from '../src/core/ActionEngine';
-import { MockRobotAdapter } from '../src/core/RobotAdapter';
+import { MockRobotAdapter } from './MockRobotAdapter';
 import { makeAction, makeProject, makeRule } from '../src/core/types';
 import { parseProject } from '../src/core/ProjectStorage';
 import { RuleCard } from '../src/components/RuleCard';

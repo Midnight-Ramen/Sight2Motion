@@ -1,4 +1,4 @@
-// Local acceptance fixture: real TM/TFJS loading and inference, synthetic camera, Mock Finch.
+// Local acceptance fixture: real TM/TFJS inference, synthetic camera, intercepted robot transport.
 // No requests to Google's servers and no physical webcam or robot access.
 import { chromium, expect } from '@playwright/test';
 import * as tf from '@tensorflow/tfjs';
@@ -27,6 +27,12 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true,
   args: ['--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
 const errors = [], requests = [];
+const robotCommands = [];
+await page.route('http://127.0.0.1:30061/**', route => {
+  const path = new URL(route.request().url()).pathname;
+  robotCommands.push(path);
+  return route.fulfill({ body: path.includes('/in/') ? 'true' : '200', headers: { 'access-control-allow-origin': '*' } });
+});
 page.on('pageerror', error => errors.push(error.message));
 page.on('request', request => requests.push(request.url()));
 await page.route('https://teachablemachine.withgoogle.com/**', async route => {
@@ -71,10 +77,11 @@ try {
   await page.getByLabel('Class', { exact: true }).selectOption('Eraser');
   await page.getByLabel('Rule confidence', { exact: true }).fill('80');
   await page.getByLabel('Action 1 color', { exact: true }).fill('#00ff00');
-  await page.getByRole('button', { name: 'Connect mock Finch', exact: true }).click();
-  await expect(page.getByTestId('finch-beak')).not.toHaveAttribute('fill', '#00ff00');
+  await page.getByRole('button', { name: 'Attach to Finch 2 A', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disconnect from app', exact: true })).toBeVisible();
+  robotCommands.length = 0;
   await page.getByRole('button', { name: 'Play rules', exact: true }).click();
-  await expect(page.getByTestId('finch-beak')).toHaveAttribute('fill', '#00ff00', { timeout: 15000 });
+  await expect.poll(() => robotCommands.includes('/hummingbird/out/triled/1/0/255/0/A'), { timeout: 15000 }).toBe(true);
   await page.evaluate(() => window.__setFrameColor('#00ff00'));
   await expect(page.locator('.top-prediction')).toContainText('Marker', { timeout: 15000 });
   expect(await page.evaluate(() => window.__cameraStreams)).toBe(1);
@@ -96,7 +103,7 @@ try {
   await expect(page.getByLabel('Distance', { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
   await writeFile('test-results/teachable-machine.json', JSON.stringify({
-    tfjs: tf.version.tfjs, passed: true, cameraStreams: 1, model: 'local synthetic image model', robot: 'Mock Finch', errors,
+    tfjs: tf.version.tfjs, passed: true, cameraStreams: 1, model: 'local synthetic image model', robot: 'intercepted Finch transport', errors,
   }, null, 2));
   console.log('TM acceptance fixture passed: TFJS 4.22.0, real loader/inference, one stream, classes, rules, STOP, persistence and YOLO switch-back.');
 } catch (error) {

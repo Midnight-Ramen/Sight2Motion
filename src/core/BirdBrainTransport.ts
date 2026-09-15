@@ -44,7 +44,7 @@ export class BirdBrainTransport {
     if (result !== '200')
       throw new Error(
         result === 'Not Connected'
-          ? 'Finch is disconnected in BlueBird.'
+          ? 'Robot is disconnected in BlueBird.'
           : 'BlueBird returned an unexpected command response.',
       );
   }

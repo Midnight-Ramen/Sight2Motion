@@ -1,6 +1,6 @@
 import { it, expect, vi } from 'vitest';
 import { ActionEngine } from '../src/core/ActionEngine';
-import { MockRobotAdapter } from '../src/core/RobotAdapter';
+import { MockRobotAdapter } from './MockRobotAdapter';
 import { makeAction, makeProject } from '../src/core/types';
 import { parseProject } from '../src/core/ProjectStorage';
 

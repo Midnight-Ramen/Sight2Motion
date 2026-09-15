@@ -620,127 +620,6 @@ aside {
   padding: 7px;
   width: 207px;
 }
-.mock-chip {
-  font-size: 7px;
-  letter-spacing: 1px;
-  color: #a2ab94;
-  width: 100%;
-  text-align: right;
-  margin-right: 3px;
-}
-.finch-scene {
-  height: 161px;
-  position: relative;
-  background: radial-gradient(ellipse, #eff5e5, transparent 66%);
-  overflow: hidden;
-}
-.finch {
-  height: 143px;
-  width: 100%;
-  position: relative;
-  z-index: 1;
-}
-.orbit {
-  position: absolute;
-  border: 1px solid #e8eede;
-  border-radius: 50%;
-  width: 209px;
-  height: 87px;
-  top: 46px;
-  left: calc(50% - 104px);
-  transform: rotate(-15deg);
-}
-.orbit-two {
-  width: 255px;
-  height: 114px;
-  top: 31px;
-  left: calc(50% - 127px);
-  transform: rotate(15deg);
-  border-style: dashed;
-}
-.robot-name {
-  position: absolute;
-  bottom: 3px;
-  width: 100%;
-  text-align: center;
-  font-size: 10px;
-  font-weight: 600;
-  color: #68805d;
-}
-.robot-name span {
-  font-size: 7px;
-  font-weight: 400;
-  letter-spacing: 1px;
-  margin-left: 7px;
-  color: #a0ab94;
-}
-.wheel-readout {
-  position: absolute;
-  top: 92px;
-  left: 19px;
-  right: 19px;
-  display: flex;
-  justify-content: space-between;
-  font: 8px monospace;
-  color: #98a58b;
-}
-.sound-bubble {
-  position: absolute;
-  right: 37px;
-  top: 20px;
-  background: #e9f0dc;
-  padding: 6px;
-  border-radius: 8px;
-  font-size: 11px;
-}
-.turning {
-  animation: wheel 0.15s infinite alternate;
-}
-@keyframes wheel {
-  to {
-    opacity: 0.5;
-    transform: translateY(2px);
-  }
-}
-.robot-connect {
-  padding: 12px 17px;
-}
-.robot-connect button {
-  width: 100%;
-  font-size: 11px;
-  padding: 8px;
-}
-.manual-controls {
-  padding: 0 17px 12px;
-}
-.manual-controls summary {
-  font-size: 10px;
-  display: flex;
-  justify-content: space-between;
-  color: #7c8b73;
-  list-style: none;
-}
-.manual-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 12px;
-}
-.manual-row button {
-  padding: 7px;
-}
-.manual-row label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  font-size: 9px;
-}
-.manual-controls p {
-  font-size: 9px;
-  color: #8a9482;
-  margin-top: 9px;
-}
 .tiny-tag {
   font-size: 7px;
   border: 1px solid #dee6d5;
@@ -1658,9 +1537,7 @@ footer > span > span {
   .robot-select label {
     display: none;
   }
-  .mock-chip {
-    text-align: left;
-  }
+
   .model-panel .panel-heading {
     padding: 0 13px;
   }
@@ -1741,9 +1618,7 @@ footer > span > span {
   .robot-select label {
     display: block;
   }
-  .mock-chip {
-    text-align: right;
-  }
+
   .camera-stage {
     aspect-ratio: 1/1;
   }
@@ -1895,7 +1770,7 @@ html {
   color: #6d7d60;
 }
 .hardware-test{padding:17px}.hardware-test h3{font-size:13px}.hardware-test dl{font-size:12px;margin:14px 0}.hardware-test dl>div{display:flex;justify-content:space-between;gap:10px;margin:9px 0}.hardware-test dd{margin:0;font-weight:600}.hardware-test p{font-size:11px;line-height:1.6;margin:10px 0;color:#61705a}.hardware-test>button{width:100%}.hardware-test-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.hardware-test-buttons button{min-height:42px;font-size:10px}
-.finch-photo-frame{height:165px;overflow:hidden;background:#f1f1f1;position:relative}.finch-photo{width:100%;height:100%;object-fit:cover;object-position:center;transform:scale(1.5);display:block}.finch-simulation-label{text-align:center;font-size:12px;font-weight:600;margin:9px 0}.finch-simulation-label span{font-size:9px;font-weight:400;letter-spacing:1px;margin-left:6px;color:#6d7d60}.finch-output-row{display:flex;justify-content:space-between;align-items:center;padding:4px 20px;color:#61705a;font-size:11px}.finch-output-row>span{display:flex;align-items:center;gap:5px}.finch-wheel-indicator{display:inline-block;width:12px;height:12px;border:2px dashed #7a8972;border-radius:50%}.finch-wheel-indicator.moving{animation:spin .5s linear infinite;border-color:#28513d}.finch-note{text-align:center;color:#31563f;font-size:12px;padding:5px}.hardware-test>.finch-photo-frame{margin:-17px -17px 16px}.finch-photo-simulator{padding-bottom:6px}
+.finch-photo-frame{height:165px;overflow:hidden;background:#f1f1f1;position:relative}.finch-photo{width:100%;height:100%;object-fit:cover;object-position:center;transform:scale(1.5);display:block}.hardware-test>.finch-photo-frame{margin:-17px -17px 16px}
 .project-objects{background:#fff;border:1px solid #dce3d7;border-radius:14px;padding:18px;margin-top:16px}
 .project-objects h3{margin:0 0 12px;font-size:16px}.project-object-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .project-object-chip{display:inline-flex;align-items:center;gap:5px;background:#eef3e9;border-radius:16px;padding:4px 10px;font-size:12px}
@@ -1909,3 +1784,4 @@ html {
 .object-picker-options label,.vision-check-toggle{display:flex;align-items:center;gap:8px;font-size:13px}.vision-check-toggle{margin-top:14px}
 .vision-check>div{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0}
 .tail-light-picker{display:flex;flex-wrap:wrap;gap:10px;border:0;padding:4px 0;margin:0;flex-basis:100%}.tail-light-picker legend{font-size:12px}.tail-light-picker label{display:flex;align-items:center;gap:5px}.tail-light-picker small{flex-basis:100%;font-size:11px;color:#63715e}
+.hardware-test>.finch-photo-frame{margin:8px -17px 16px}.hardware-test>.hardware-test-buttons+button{margin-top:12px}

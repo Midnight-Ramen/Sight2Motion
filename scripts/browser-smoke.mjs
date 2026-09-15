@@ -16,6 +16,12 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
 await page.route('**/test-fixtures/bus.jpg', route => route.fulfill({path:'test-results/bus.jpg',contentType:'image/jpeg'}));
 const errors = [];
+const robotCommands = [];
+await page.route('http://127.0.0.1:30061/**', route => {
+  const path = new URL(route.request().url()).pathname;
+  robotCommands.push(path);
+  return route.fulfill({ body: path.includes('/in/') ? 'true' : '200', headers: { 'access-control-allow-origin': '*' } });
+});
 page.on('pageerror', (e) => errors.push(e.message));
 await page.addInitScript(() => {
   // Exercise the required CPU fallback, independently of the host's GPU.
@@ -43,14 +49,13 @@ try {
   await expect(page.getByRole('button', { name: 'Reload model', exact: true })).toBeVisible({
     timeout: 60000,
   });
-  await page.getByRole('button', { name: 'Connect mock Finch', exact: true }).click();
+  await page.getByRole('button', { name: 'Attach to Finch 2 A', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disconnect from app', exact: true })).toBeVisible();
   await page
     .getByRole('button', { name: 'Play rules', exact: true })
     .evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await page.getByRole('button', { name: 'Play rules', exact: true }).click();
-  await expect(page.getByTestId('finch-beak')).toHaveAttribute('fill', '#51d691', {
-    timeout: 60000,
-  });
+  await expect.poll(() => robotCommands.includes('/hummingbird/out/triled/1/81/214/145/A'), { timeout: 60000 }).toBe(true);
   await expect(page.locator('.detection-chip').filter({ hasText: 'person' }).first()).toBeVisible();
   const detections = await page.locator('.detection-chip').allTextContents();
   const backend = await page.locator('.backend').textContent();

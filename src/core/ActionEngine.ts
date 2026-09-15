@@ -1,17 +1,18 @@
 import { delay, type RobotAdapter } from './RobotAdapter';
 import { validTailSequence } from './types';
 import type { Action, Rule } from './types';
+import { continuousOutput as continuous, outputKey } from './RobotCapabilities';
 type Step = { action: Action; ruleId?: string };
-const continuous = (a: Action) => a.kind === 'move' && a.mode === 'continuous';
 /** One sequence at a time; busy triggers are dropped, never queued unboundedly. */
 export class ActionEngine {
   private controller: AbortController | null = null;
   private running: Promise<boolean> | null = null;
   private activeRuleIds = new Set<string>();
   private revision = 0;
-  private motorOwner: string | null = null;
-  private pendingMotorOwner: string | null = null;
-  get activeMotorOwnerRuleId() { return this.motorOwner; }
+  private outputOwners = new Map<string, string>();
+  private pendingOutputOwners = new Map<string, string>();
+  get activeMotorOwnerRuleId() { return this.outputOwners.get('wheels') ?? null; }
+  get activeOutputOwners(): ReadonlyMap<string, string> { return new Map(this.outputOwners); }
   get busy() {
     return this.controller !== null;
   }
@@ -23,8 +24,8 @@ export class ActionEngine {
   async stop() {
     ++this.revision;
     this.activeRuleIds.clear();
-    this.motorOwner = null;
-    this.pendingMotorOwner = null;
+    this.outputOwners.clear();
+    this.pendingOutputOwners.clear();
     this.controller?.abort();
     try {
       await this.robot.stop();
@@ -40,36 +41,55 @@ export class ActionEngine {
     const previous = this.activeRuleIds;
     this.activeRuleIds = new Set(active.map(r => r.id));
     const entering = active.filter(r => !previous.has(r.id));
-    const starts = new Set(entering.filter(r => r.actions.some(a => a.enabled && continuous(a))).map(r => r.id));
+    const supported = this.robot.getCapabilities();
+    const starts = new Set(entering.filter(r => r.actions.some(a => a.enabled && supported.includes(a.kind) && continuous(a))).map(r => r.id));
     const stops = new Set(entering.filter(r => r.actions.some(a => a.enabled && a.kind === 'stop')).map(r => r.id));
     const triggeredIds = new Set(triggered.map(r => r.id));
     const candidates = [...triggered, ...entering.filter(r => !triggeredIds.has(r.id))];
-    const steps = candidates.flatMap(r => r.actions.filter(a => a.enabled &&
+    const steps = candidates.flatMap(r => r.actions.filter(a => a.enabled && supported.includes(a.kind) &&
       (continuous(a) ? starts.has(r.id) : triggeredIds.has(r.id) || (a.kind === 'stop' && stops.has(r.id))))
       .map(action => ({ action, ruleId: r.id })));
-    const owner = this.pendingMotorOwner ?? this.motorOwner;
-    const ownerLost = owner !== null && !this.activeRuleIds.has(owner);
+    const owners = new Map([...this.outputOwners, ...this.pendingOutputOwners]);
+    const lostOutputs = [...owners].filter(([, owner]) => !this.activeRuleIds.has(owner)).map(([key]) => key);
+    const replacements = new Map(steps.filter(s => continuous(s.action)).map(s => [outputKey(s.action)!, s.ruleId]));
     const explicitStop = steps.some(s => s.action.kind === 'stop');
-    if (starts.size || ownerLost || explicitStop) {
+    if (starts.size || lostOutputs.length || explicitStop) {
       const revision = ++this.revision;
-      this.pendingMotorOwner = [...starts].at(-1) ?? null;
+      this.pendingOutputOwners = replacements;
       const previousRun = this.running;
       this.controller?.abort();
       // STOP/release bypass waits and timed actions. Drain their cancellation before a new drive.
-      if (explicitStop || (ownerLost && !starts.size)) {
-        this.motorOwner = null;
-        try { await this.robot.stop(); }
+      if (explicitStop || lostOutputs.length) {
+        try {
+          if (explicitStop) {
+            this.outputOwners.clear();
+            await this.robot.stop();
+          } else {
+            await Promise.all(lostOutputs.filter(key => !replacements.has(key)).map(async key => {
+              this.outputOwners.delete(key);
+              if (this.robot.stopOutput) await this.robot.stopOutput(key);
+              else await this.robot.stop();
+            }));
+          }
+        }
         catch { this.onError(); await this.stop(); return false; }
       }
       await previousRun;
       if (revision !== this.revision) return false;
-      this.pendingMotorOwner = null;
+      this.pendingOutputOwners.clear();
     } else if (this.busy) return false;
     if (!steps.length) return true;
     return this.runSteps(steps);
   }
   async run(actions: Action[]): Promise<boolean> {
     return this.runSteps(actions.map(action => ({ action })));
+  }
+  async reset(actions: Action[]): Promise<boolean> {
+    await this.stop();
+    const revision = this.revision;
+    await this.running;
+    if (revision !== this.revision) return false;
+    return this.run(actions);
   }
   private runSteps(steps: Step[]): Promise<boolean> {
     if (this.busy) return Promise.resolve(false);
@@ -85,11 +105,18 @@ export class ActionEngine {
       for (const { action, ruleId } of steps) {
         if (controller.signal.aborted) break;
         if (!action.enabled) continue;
+        if (!this.robot.getCapabilities().includes(action.kind)) {
+          this.log(`${action.kind} is not available for the selected robot.`);
+          continue;
+        }
+        const key = outputKey(action);
         if (continuous(action)) {
           if (!ruleId || !this.activeRuleIds.has(ruleId)) continue;
-          this.motorOwner = ruleId;
-        } else if (action.kind === 'move' || action.kind === 'stop') {
-          this.motorOwner = null;
+          this.outputOwners.set(key!, ruleId);
+        } else if (action.kind === 'stop') {
+          this.outputOwners.clear();
+        } else if (key) {
+          this.outputOwners.delete(key);
         }
         this.log(
           action.kind === 'beak'
@@ -119,14 +146,16 @@ export class ActionEngine {
         }
       }
       return !controller.signal.aborted;
-    } catch {
-      this.motorOwner = null;
+    } catch (error) {
+      // Each timed adapter action stops its own output in finally. A handoff must not stop other outputs.
+      if (controller.signal.aborted) return false;
+      this.outputOwners.clear();
       if (!controller.signal.aborted) {
         ++this.revision;
         this.activeRuleIds.clear();
-        this.pendingMotorOwner = null;
+        this.pendingOutputOwners.clear();
         this.onError();
-        this.log('Robot paused. Reconnect and try again.');
+        this.log(`Robot paused. ${error instanceof Error ? error.message : 'Reconnect and try again.'}`);
       }
       try {
         await this.robot.stop();

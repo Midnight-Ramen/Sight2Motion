@@ -9,6 +9,7 @@ import {
   type VisionResult,
 } from '../core/types';
 import { objectLabel } from '../core/ProjectObjects';
+import { portsFor } from '../core/RobotCapabilities';
 import { classificationRule, compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from '../core/VisionCapabilities';
 export function RuleCard({
   rule,
@@ -19,9 +20,11 @@ export function RuleCard({
   selectedClasses,
   detections = [],
   visionCapabilities = YOLO_CAPABILITIES,
+  robotName = 'Finch 2',
 }: {
   detections?: VisionResult[];
   visionCapabilities?: VisionCapabilities;
+  robotName?: string;
   selectedClasses: string[];
   rule: Rule;
   index: number;
@@ -215,16 +218,32 @@ export function RuleCard({
               <div className="action-fields">
                 <select
                   aria-label={`Action ${i + 1} type`}
-                  value={a.kind}
-                  onChange={(e) => updateAction(a.id, { kind: e.target.value as ActionKind, ...(e.target.value === 'tail' ? { tailLights: [] } : {}), ...(e.target.value === 'tailLightSequence' ? sequenceDefaults() : {}) })}
+                  value={capabilities.includes(a.kind) ? a.kind : ''}
+                  onChange={(e) => updateAction(a.id, { ...makeAction(e.target.value as ActionKind), id: a.id, enabled: a.enabled })}
                 >
+                  {!capabilities.includes(a.kind) && <option value="" disabled>Choose an action</option>}
                   {capabilities.map((kind) => (
                     <option key={kind} value={kind}>
-                      {actionDefinitions[kind].label}
+                      {kind === 'stop' && capabilities.includes('rotationServo') ? 'Stop outputs' : actionDefinitions[kind].label}
                     </option>
                   ))}
                 </select>
-                {(a.kind === 'beak' || a.kind === 'tail') && (
+                {!capabilities.includes(a.kind) && <small role="status">Not available for {robotName}</small>}
+                {capabilities.includes(a.kind) && <>
+                {portsFor(a.kind).length > 0 && <label>Port
+                  <select aria-label={`Action ${i + 1} port`} value={a.port ?? 1} onChange={e => updateAction(a.id, { port: +e.target.value })}>
+                    {portsFor(a.kind).map(port => <option key={port} value={port}>{port}</option>)}
+                  </select>
+                </label>}
+                {a.kind === 'singleLed' && <label>Brightness %
+                  <input aria-label={`Action ${i + 1} brightness`} type="number" min={0} max={100} value={a.brightness ?? 100}
+                    onChange={e => updateAction(a.id, { brightness: Math.max(0, Math.min(100, +e.target.value)) })} />
+                </label>}
+                {a.kind === 'positionServo' && <label>Angle °
+                  <input aria-label={`Action ${i + 1} angle`} type="number" min={0} max={180} value={a.angle ?? 90}
+                    onChange={e => updateAction(a.id, { angle: Math.max(0, Math.min(180, +e.target.value)) })} />
+                </label>}
+                {(a.kind === 'beak' || a.kind === 'tail' || a.kind === 'triLed') && (
                   <label className="color-field">
                     Color
                     <input
@@ -268,7 +287,7 @@ export function RuleCard({
                   <label><input type="checkbox" checked={a.clearPrevious ?? true} onChange={e => updateAction(a.id, { clearPrevious: e.target.checked })} />One light at a time</label>
                   <label><input type="checkbox" checked={a.clearWhenFinished ?? true} onChange={e => updateAction(a.id, { clearWhenFinished: e.target.checked })} />Turn sequence lights off when finished</label>
                 </fieldset>}
-                {a.kind === 'move' && (
+                {(a.kind === 'move' || a.kind === 'rotationServo') && (
                   <>
                     <label>Movement
                       <select aria-label={`Action ${i + 1} movement mode`} value={a.mode ?? 'timed'}
@@ -277,7 +296,7 @@ export function RuleCard({
                         <option value="continuous">Continuous while rule matches</option>
                       </select>
                     </label>
-                    {a.mode === 'continuous' && <small>Keeps moving while this rule remains true.</small>}
+                    {a.mode === 'continuous' && <small>Runs while this rule remains true.</small>}
                     <select
                       aria-label="Move direction"
                       value={a.direction}
@@ -285,8 +304,8 @@ export function RuleCard({
                         updateAction(a.id, { direction: e.target.value as Action['direction'] })
                       }
                     >
-                      {['forward', 'backward', 'left', 'right'].map((d) => (
-                        <option key={d}>{d}</option>
+                      {(a.kind === 'move' ? ['forward', 'backward', 'left', 'right'] : ['forward', 'backward']).map((d) => (
+                        <option key={d} value={d}>{d === 'backward' && a.kind === 'rotationServo' ? 'Reverse' : objectLabel(d)}</option>
                       ))}
                     </select>
                     <label>
@@ -314,7 +333,7 @@ export function RuleCard({
                     ))}
                   </select>
                 )}
-                {(['wait', 'sound'].includes(a.kind) || (a.kind === 'move' && a.mode !== 'continuous')) && (
+                {(['wait', 'sound'].includes(a.kind) || (['move', 'rotationServo'].includes(a.kind) && a.mode !== 'continuous')) && (
                   <label>
                     Duration (ms)
                     <input
@@ -330,6 +349,7 @@ export function RuleCard({
                     />
                   </label>
                 )}
+                </>}
               </div>
               <div className="action-tools">
                 <input
@@ -364,7 +384,7 @@ export function RuleCard({
           <button
             className="add-action"
             disabled={rule.actions.length >= 30}
-            onClick={() => patch({ actions: [...rule.actions, makeAction()] })}
+            onClick={() => patch({ actions: [...rule.actions, makeAction(capabilities[0])] })}
           >
             <Plus size={15} />
             Add action

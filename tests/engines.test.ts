@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { DetectionManager } from '../src/core/DetectionManager';
 import { RuleEngine } from '../src/core/RuleEngine';
 import { ActionEngine } from '../src/core/ActionEngine';
-import { MockRobotAdapter } from '../src/core/RobotAdapter';
+import { MockRobotAdapter } from './MockRobotAdapter';
 import { makeRule, makeAction, makeProject, type Detection } from '../src/core/types';
 import { parseProject } from '../src/core/ProjectStorage';
 const person: Detection = {

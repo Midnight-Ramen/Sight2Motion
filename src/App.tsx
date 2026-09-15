@@ -38,7 +38,7 @@ import { capabilitiesFor } from './core/VisionCapabilities';
 import { normalizeTeachableMachineUrl } from './core/TeachableMachineUrl';
 import { RuleEngine } from './core/RuleEngine';
 import { ActionEngine } from './core/ActionEngine';
-import { MockRobotAdapter, type MockState } from './core/RobotAdapter';
+import type { RobotStatus } from './core/RobotAdapter';
 import { ProjectStorage, parseProject } from './core/ProjectStorage';
 import {
   makeAction,
@@ -50,10 +50,12 @@ import {
   hasBoundingBox,
   type Project,
   type Action,
+  type RobotType,
 } from './core/types';
 import { RuleCard } from './components/RuleCard';
 import { ProjectObjects } from './components/ProjectObjects';
-import { FinchView } from './components/FinchView';
+import { HummingbirdAdapter } from './core/HummingbirdAdapter';
+import { ROBOTS, resetActions } from './core/RobotCapabilities';
 import { FinchAdapter, type FinchStatus } from './core/FinchAdapter';
 import { RobotRouter } from './core/RobotRouter';
 import { HardwareTest } from './components/HardwareTest';
@@ -72,14 +74,6 @@ export default function App() {
   const [project, setProject] = useState<Project>(makeProject);
   const projectRef = useRef(project);
   projectRef.current = project;
-  const [robotState, setRobotState] = useState<MockState>({
-    connected: false,
-    beak: '#ccd7d0',
-    tails: Array(4).fill('#ccd7d0'),
-    left: 0,
-    right: 0,
-    sound: null,
-  });
   const [logs, setLogs] = useState<{ time: string; text: string }[]>([]);
   const log = useCallback(
     (text: string) =>
@@ -90,8 +84,7 @@ export default function App() {
   );
   const [ai, setAi] = useState(false),
     aiRef = useRef(false);
-  const [mockRobot] = useState(() => new MockRobotAdapter(setRobotState));
-  const [robotMode, setRobotMode] = useState<'mock' | 'real'>('mock');
+  const robotMode = project.robotType;
   const [hardwareBusy, setHardwareBusy] = useState(false);
   const [finchStatus, setFinchStatus] = useState<FinchStatus>({
     connector: 'not-detected',
@@ -108,9 +101,15 @@ export default function App() {
         }
       }),
   );
-  const [robot] = useState(() => new RobotRouter(mockRobot));
-  const connected =
-    robotMode === 'mock' ? robotState.connected : finchStatus.connection === 'connected';
+  const [hummingbirdStatus, setHummingbirdStatus] = useState<RobotStatus>({
+    connector: 'not-detected', connection: 'disconnected', message: 'Connect Hummingbird Bit A in BlueBird, then attach here.',
+  });
+  const [hummingbird] = useState(() => new HummingbirdAdapter(status => {
+    setHummingbirdStatus(status);
+    if (status.connection !== 'connected') { aiRef.current = false; setAi(false); }
+  }));
+  const [robot] = useState(() => new RobotRouter(finch));
+  const connected = robotMode === 'finch' ? finchStatus.connection === 'connected' : hummingbirdStatus.connection === 'connected';
   const [actions] = useState(
     () =>
       new ActionEngine(robot, log, () => {
@@ -246,7 +245,7 @@ export default function App() {
       setDetections(items);
       if (
         !aiRef.current ||
-        !(robot.current === mockRobot ? mockRobot.state.connected : finch.connected)
+        !robot.connected
       )
         return;
       const triggered = rules.evaluate(projectRef.current.rules, items, performance.now(), capabilitiesFor(projectRef.current.visionProvider));
@@ -258,7 +257,7 @@ export default function App() {
         setLastRule(triggered.map((r) => r.name).join(', '));
       }
     },
-    [actions, robot, mockRobot, finch, rules, log],
+    [actions, robot, rules, log],
   );
   useEffect(() => {
     const version = ++loopVersion.current;
@@ -472,7 +471,7 @@ export default function App() {
       return;
     }
     if (
-      !(robot.current === mockRobot ? mockRobot.state.connected : finch.connected) ||
+      !robot.connected || hardwareBusy ||
       (!demo && (!cameraOn || !modelReady))
     ) {
       setNotice('Connect your selected robot and start the camera + model, or try the demo first.');
@@ -492,46 +491,46 @@ export default function App() {
     setDemo(true);
     setDemoVisible(true);
     setNotice('Demo mode uses a simulated person detection. No camera or AI model is running.');
-    log('Demo scene ready. Connect the mock Finch, then enable AI.');
+    log('Demo scene ready. Attach your robot, then enable AI.');
   }
-  async function selectRobot(mode: 'mock' | 'real') {
+  async function selectRobot(mode: RobotType, updateProject = true) {
     aiRef.current = false;
     setAi(false);
     rules.reset();
     setHardwareBusy(true);
     try {
       await actions.stop();
-      await robot.select(mode === 'real' ? finch : mockRobot);
+      await robot.select(mode === 'finch' ? finch : hummingbird);
     } catch {
       setNotice(
         'Could not confirm STOP on the previous robot. Check it physically before continuing.',
       );
     } finally {
-      setRobotMode(mode);
+      if (updateProject) { setProject(current => ({ ...current, robotType: mode })); setDirty(true); }
       setHardwareBusy(false);
     }
   }
-  async function attachFinch() {
+  async function attachRobot() {
     aiRef.current = false;
     setAi(false);
     rules.reset();
     setHardwareBusy(true);
     try {
-      await finch.connect();
-      log('BlueBird accepted attachment to Finch A. Test its beak first.');
+      await robot.connect();
+      log(`BlueBird accepted attachment to ${ROBOTS[robotMode].name} A. Test its outputs first.`);
     } catch {
-      log('Finch attachment failed. Check BlueBird and device A.');
+      log('Robot attachment failed. Check BlueBird and device A.');
     } finally {
       setHardwareBusy(false);
     }
   }
-  async function detachFinch() {
+  async function detachRobot() {
     pause();
     setHardwareBusy(true);
     try {
-      await finch.disconnect();
+      await robot.disconnect();
     } catch {
-      setNotice('Stop could not be confirmed. Check the Finch physically.');
+      setNotice('Stop could not be confirmed. Check the robot physically.');
     } finally {
       setHardwareBusy(false);
     }
@@ -544,17 +543,24 @@ export default function App() {
     try {
       await actions.stop();
       const ok = await actions.run([action]);
-      if (ok) log('Hardware test request completed. Please observe the physical Finch.');
+      if (ok) log('Hardware test request completed. Please observe the physical robot.');
     } finally {
       setHardwareBusy(false);
     }
   }
-  async function manual(direction: Action['direction']) {
-    pause();
-    await actions.run([{ ...makeAction('move'), direction, duration: 700 }]);
+  async function resetProjectOutputs() {
+    aiRef.current = false;
+    setAi(false);
+    rules.reset();
+    setHardwareBusy(true);
+    try {
+      const ok = await actions.reset(resetActions(robotMode, project.rules));
+      if (ok) { setNotice('Robot outputs reset. Your rules are kept.'); log('Project outputs reset; rules paused and preserved.'); }
+    } finally { setHardwareBusy(false); }
   }
   function replaceProject(p: Project) {
     pause();
+    if (p.robotType !== robotMode) void selectRobot(p.robotType, false);
     if ((p.visionProvider ?? 'yolo') !== providerKind || p.teachableMachineUrl !== project.teachableMachineUrl)
       resetModel(p.visionProvider ?? 'yolo');
     setTmUrlInput(p.teachableMachineUrl ?? '');
@@ -878,7 +884,7 @@ export default function App() {
                   <Radio size={18} />
                   Your robot
                 </h2>
-                <span className={`status ${robotState.connected ? 'active' : ''}`}>
+                <span className={`status ${connected ? 'active' : ''}`}>
                   <i />
                   {connected ? 'Connected' : 'Disconnected'}
                 </span>
@@ -889,86 +895,21 @@ export default function App() {
                   id="robot-type"
                   value={robotMode}
                   disabled={hardwareBusy}
-                  onChange={(e) => void selectRobot(e.target.value as 'mock' | 'real')}
+                  onChange={(e) => void selectRobot(e.target.value as RobotType)}
                 >
-                  <option value="mock">Mock Finch 2</option>
-                  <option value="real">Finch 2 — Real Robot</option>
+                  {Object.entries(ROBOTS).map(([value, config]) => <option key={value} value={value}>{config.name}</option>)}
                 </select>
-                {robotMode === 'mock' && <span className="mock-chip">NO HARDWARE NEEDED</span>}
               </div>
-              {robotMode === 'real' ? (
-                <HardwareTest
-                  status={finchStatus}
-                  busy={hardwareBusy}
-                  onAttach={() => void attachFinch()}
-                  onDisconnect={() => void detachFinch()}
-                  onBeak={(color) => void hardwareAction({ ...makeAction('beak'), color })}
-                  onWheels={() =>
-                    void hardwareAction({ ...makeAction('move'), speed: 10, duration: 1000 })
-                  }
-                  onStop={stop}
-                />
-              ) : (
-                <>
-                  {' '}
-                  <FinchView state={robotState} />
-                  <div className="robot-connect">
-                    <button
-                      className={robotState.connected ? 'secondary' : 'primary'}
-                      onClick={async () => {
-                        pause();
-                        if (robotState.connected) {
-                          await robot.disconnect();
-                          log('Mock Finch disconnected.');
-                        } else {
-                          await robot.connect();
-                          log('Mock Finch connected.');
-                        }
-                      }}
-                    >
-                      <Radio size={15} />
-                      {robotState.connected ? 'Disconnect' : 'Connect mock Finch'}
-                    </button>
-                  </div>
-                  <details className="manual-controls">
-                    <summary>
-                      Manual controls <SlidersHorizontal size={14} />
-                    </summary>
-                    <div className="manual-row">
-                      {[
-                        { dir: 'left', icon: ArrowLeft },
-                        { dir: 'forward', icon: ArrowUp },
-                        { dir: 'backward', icon: ArrowDown },
-                        { dir: 'right', icon: ArrowRight },
-                      ].map(({ dir, icon: Icon }) => (
-                        <button
-                          key={dir}
-                          aria-label={`Move ${dir}`}
-                          disabled={!robotState.connected}
-                          onClick={() => manual(dir as Action['direction'])}
-                        >
-                          <Icon size={17} />
-                        </button>
-                      ))}
-                      <label>
-                        Beak
-                        <input
-                          type="color"
-                          aria-label="Manual beak color"
-                          disabled={!robotState.connected}
-                          value={robotState.beak}
-                          onChange={(e) => {
-                            pause();
-                            void actions.run([{ ...makeAction(), color: e.target.value }]);
-                          }}
-                        />
-                      </label>
-                    </div>
-                    <p>Movement and sound are simulated.</p>
-                  </details>
-                </>
-              )}
-            </section>
+              <HardwareTest
+                robotType={robotMode}
+                status={robotMode === 'finch' ? finchStatus : hummingbirdStatus}
+                busy={hardwareBusy}
+                onAttach={() => void attachRobot()}
+                onDisconnect={() => void detachRobot()}
+                onAction={action => void hardwareAction(action)}
+                onReset={() => void resetProjectOutputs()}
+                onStop={stop}
+              />            </section>
             <section className="panel model-panel">
               <div className="panel-heading">
                 <h2>
@@ -1104,13 +1045,13 @@ export default function App() {
               <p role="status">{ai ? 'Running · Stop, then Play to test again with the object still visible.' : 'Paused · Press Play rules after making changes. Detection continues while paused.'}</p>
             </div>
             <div className="rules-controls">
-              <button className="primary" disabled={ai} onClick={toggleAI}>
+              <button className="primary" disabled={ai || hardwareBusy} onClick={toggleAI}>
                 <Play size={16} /> Play rules
               </button>
               <button onClick={stop}><Square size={16} /> Stop rules</button>              <button
                 className="primary"
                 disabled={project.rules.length >= 50}
-                onClick={() => edit({ ...project, rules: [...project.rules, { ...makeRule(), className: project.selectedClasses[0] }] })}
+                onClick={() => edit({ ...project, rules: [...project.rules, { ...makeRule(), className: project.selectedClasses[0], actions: [makeAction(ROBOTS[robotMode].actions[0])] }] })}
               >
                 <Plus size={16} />
                 Add rule
@@ -1125,7 +1066,8 @@ export default function App() {
               selectedClasses={visionCapabilities.boundingBoxes ? project.selectedClasses : project.selectedClasses.filter(c => availableClasses.includes(c))}
               visionCapabilities={visionCapabilities}
               index={i}
-              capabilities={robot.getCapabilities()}
+              capabilities={ROBOTS[robotMode].actions}
+              robotName={ROBOTS[robotMode].name}
               onChange={(rule) =>
                 edit({
                   ...project,
@@ -1142,7 +1084,7 @@ export default function App() {
               <Sparkles size={26} />
               <h3>What should your robot notice?</h3>
               <p>Add your first rule to turn a detection into an action.</p>
-              <button onClick={() => edit({ ...project, rules: [makeRule()] })}>
+              <button onClick={() => edit({ ...project, rules: [{ ...makeRule(), className: project.selectedClasses[0], actions: [makeAction(ROBOTS[robotMode].actions[0])] }] })}>
                 <Plus size={16} />
                 Create a rule
               </button>
@@ -1276,8 +1218,7 @@ export default function App() {
                     button.
                   </li>
                   <li>
-                    <b>Connect Mock Finch.</b> Its beak, wheels, lights, and sound events appear on
-                    screen.
+                    <b>Attach your robot.</b> Select Finch 2 or Hummingbird Bit, connect device A in BlueBird, and test its physical outputs.
                   </li>
                   <li>
                     <b>Make a rule.</b> Start with person → beak green. The object must be visible
@@ -1289,8 +1230,7 @@ export default function App() {
                   </li>
                 </ol>
                 <p className="help-note">
-                  Demo detections are simulated. Real hardware, segmentation, and individual object
-                  tracking are future milestones. Read the project README for model export
+                  Demo detections are simulated. Robot actions control the attached physical device. Read the project README for model export
                   instructions.
                 </p>
                 <button
@@ -1347,7 +1287,3 @@ export default function App() {
     </>
   );
 }
-
-
-
-

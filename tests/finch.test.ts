@@ -5,7 +5,7 @@ import { ActionEngine } from '../src/core/ActionEngine';
 import { RuleEngine } from '../src/core/RuleEngine';
 import { makeAction, makeRule } from '../src/core/types';
 import { RobotRouter } from '../src/core/RobotRouter';
-import { MockRobotAdapter } from '../src/core/RobotAdapter';
+import { MockRobotAdapter } from './MockRobotAdapter';
 function setup(identity = 'true') {
   const fetcher = vi.fn<typeof fetch>(
     async (url) => new Response(String(url).includes('/in/') ? identity : '200'),

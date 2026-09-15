@@ -14,7 +14,7 @@ export function parseProject(text: string): Project {
     typeof p.id !== 'string' ||
     typeof p.name !== 'string' ||
     p.name.length > 100 ||
-    p.robotType !== 'mock-finch' ||
+    !['mock-finch', 'finch', 'hummingbird'].includes(String(p.robotType)) ||
     (p.visionProvider !== undefined && !['yolo', 'teachable-machine'].includes(String(p.visionProvider))) ||
     (p.teachableMachineUrl !== undefined && (typeof p.teachableMachineUrl !== 'string' || p.teachableMachineUrl.length > 2048)) ||
     !obj(p.vision) ||
@@ -57,6 +57,11 @@ export function parseProject(text: string): Project {
         ids.has(a.id) ||
         !Object.hasOwn(actionDefinitions, String(a.kind)) ||
         typeof a.enabled !== 'boolean' ||
+        (['singleLed', 'triLed', 'positionServo', 'rotationServo'].includes(String(a.kind)) &&
+          (!Number.isInteger(a.port) || !number(a.port, 1, a.kind === 'singleLed' ? 3 : a.kind === 'triLed' ? 2 : 4))) ||
+        (a.kind === 'singleLed' && !number(a.brightness, 0, 100)) ||
+        (a.kind === 'positionServo' && !number(a.angle, 0, 180)) ||
+        (a.kind === 'rotationServo' && !['forward', 'backward'].includes(String(a.direction))) ||
         (a.mode !== undefined && !['timed', 'continuous'].includes(String(a.mode))) ||
         (a.kind === 'tailLightSequence' && !validTailSequence(a as Partial<Action>)) ||
         (a.tailLights !== undefined && (!Array.isArray(a.tailLights) || a.tailLights.length > 4 || a.tailLights.some(v => ![1, 2, 3, 4].includes(v as number)))) ||
@@ -87,7 +92,7 @@ export function parseProject(text: string): Project {
     selectedClasses,
     id: valid.id,
     name: valid.name,
-    robotType: valid.robotType,
+    robotType: String(valid.robotType) === 'mock-finch' ? 'finch' : valid.robotType,
     vision: {
       model: valid.vision.model,
       confidence: valid.vision.confidence,
@@ -112,6 +117,9 @@ export function parseProject(text: string): Project {
         kind: a.kind,
         enabled: a.enabled,
         mode: a.mode ?? 'timed',
+        ...(['singleLed', 'triLed', 'positionServo', 'rotationServo'].includes(a.kind) ? { port: a.port } : {}),
+        ...(a.kind === 'singleLed' ? { brightness: a.brightness } : {}),
+        ...(a.kind === 'positionServo' ? { angle: a.angle } : {}),
         color: a.color,
         ...(a.tailLights !== undefined ? { tailLights: [...new Set(a.tailLights)] } : {}),
         ...(a.kind === 'tailLightSequence' ? {

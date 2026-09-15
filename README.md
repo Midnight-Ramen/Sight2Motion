@@ -4,9 +4,9 @@ A student-friendly, local-first vision playground built with React, strict TypeS
 
 ## Milestone 1
 
-Connect a camera, load YOLOv8n, see labeled bounding boxes, and use a visual **IF person → THEN beak green** rule with a mock Finch. A clearly labeled demo works without a camera or model. Real Finch 2 is supported through BlueBird Connector device A.
+Connect a camera, load YOLOv8n, see labeled bounding boxes, and use a visual **IF person → THEN beak green** rule with a real Finch. Finch 2 and Hummingbird Bit use BlueBird Connector device A. A clearly labeled demo supplies detections without a camera or model.
 
-Also included: editable action sequences, drag and arrow-button reordering, timing/cooldown controls, mock wheel/tail/sound visualization, a STOP button and spacebar shortcut, activity log, and local project save/load/duplicate/import/export.
+Also included: editable action sequences, drag and arrow-button reordering, timing/cooldown controls, a STOP button and spacebar shortcut, activity log, and local project save/load/duplicate/import/export.
 
 ## Teacher setup
 
@@ -22,16 +22,16 @@ Also included: editable action sequences, drag and arrow-button reordering, timi
 3. Open **http://127.0.0.1:5174** in Chrome or Edge. Keep the terminal open while teaching. Stop the development server with Ctrl+C afterward.
 4. Click **Connect camera**, then allow camera access. Select another camera in the model panel and reconnect if necessary.
 5. Click **Load local model**. The model and runtime are served from your own computer; video frames are never sent to a server.
-6. Click **Connect mock Finch**. The starter rule already says person → beak green. You can change its class, confidence, color, and actions, or build another with **Add rule**.
-7. Press **Play rules**, stand in view for at least half a second, and watch the simulated beak turn green. Move out of view and back to test a new appearance.
+6. Connect the robot as A in BlueBird, choose **Finch 2** or **Hummingbird Bit**, and click **Attach**. Test its connected outputs using the hardware test buttons. The starter Finch rule says person → beak green; select a compatible action for Hummingbird.
+7. Press **Play rules**, stand in view for at least half a second, and observe the physical output. Move out of view and back to test a new appearance.
 
-No hardware? Click **Try the demo**, connect Mock Finch, and enable AI. **Hide person / Show person** tests appearance and disappearance. This scene supplies synthetic detections; it does not test the neural network.
+**Try the demo** supplies synthetic detections. Attach a real robot and enable AI to test rules with **Hide person / Show person**. This does not test the neural network.
 
 ## Stop and pause
 
-The red **STOP ROBOT** button and **spacebar** pause AI and cancel the current action sequence immediately. Space still enters spaces in text fields while stopping the robot. Disconnecting the mock robot or camera, a camera track ending, hiding the tab, page exit, and inference/action failures also pause AI and attempt to stop the adapter. Detection continues while AI is paused, except in hidden tabs. Re-enable AI explicitly to resume.
+The red **STOP ROBOT** button and **spacebar** pause AI and cancel the current action sequence immediately. Space still enters spaces in text fields while stopping the robot. Disconnecting the robot or camera, a camera track ending, hiding the tab, page exit, and inference/action failures also pause AI and attempt to stop the adapter. Detection continues while AI is paused, except in hidden tabs. Re-enable AI explicitly to resume.
 
-Mock movement is timed wheel animation, not calibrated travel distance. Sound is a visible note event, not audio playback. Real Finch supports beak color, selected tail LEDs, bounded wheel movement, and STOP through the desktop BlueBird API.
+Finch supports beak color, tail LEDs, wheel movement, and STOP. Hummingbird Bit supports single LEDs (ports 1–3), tri-color LEDs (1–2), position and rotation servos (1–4), Wait, and Stop outputs. Rotation servos support timed or continuous behavior with ownership per port. STOP targets active rotation outputs without changing position angles or LEDs. Initial attachment uses stopall to clear prior outputs. Bit has no dedicated DC motor action. See [BIRDBRAIN.md](BIRDBRAIN.md) for transport mappings and hardware validation status.
 
 ## Models and local processing
 
@@ -58,7 +58,7 @@ The milestone tracks **class presence**, not individual objects. Several people 
 
 ## Projects
 
-Save stores named projects in this browser's localStorage. Open lists saved projects. New, Duplicate, Import, and Open preserve unsaved work before switching; if browser storage fails, export JSON first. Files include only the project name, schema version, mock robot type, model selection, vision settings, rules, and action parameters. No model binaries or camera media are stored. Imported settings are validated, and AI stays paused. Browser storage is local to its origin/profile; export JSON to share or back up projects.
+Save stores named projects in this browser's localStorage. Open lists saved projects. New, Duplicate, Import, and Open preserve unsaved work before switching; if browser storage fails, export JSON first. Files include only the project name, schema version, selected real robot type, model selection, vision settings, rules, and action parameters. No model binaries or camera media are stored. Imported settings are validated, and AI stays paused. Browser storage is local to its origin/profile; export JSON to share or back up projects.
 
 ## Development and verification
 
@@ -68,7 +68,7 @@ npm run build
 npm run typecheck
 ```
 
-The tests cover DetectionManager, RuleEngine, ActionEngine (mock communication), and project validation. The production output is `dist/`. Serve it over localhost or HTTPS; opening `index.html` directly will not provide camera access.
+The tests cover DetectionManager, RuleEngine, ActionEngine (test-only transport doubles), and project validation. The production output is `dist/`. Serve it over localhost or HTTPS; opening `index.html` directly will not provide camera access.
 
 For the repeatable browser integration check, leave Vite running and run `npm run test:browser`. It requires installed Chrome, downloads an upstream Ultralytics image fixture if needed, substitutes that prerecorded image for camera capture, forces WASM, and verifies real model detection → rule → green beak, spacebar stop, project storage, action editing, and mobile overflow. It never requests your physical webcam. Screenshots and the JSON report go to `test-results/`.
 
@@ -86,4 +86,3 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) and [BIRDBRAIN.md](BIRDBRAIN.md).
 ## Current project controls
 
 Choose 1–10 model-supported classes in **Objects for this project**. Rules offer only selected classes. **Test objects** displays existing live detections. Edits pause rules; press **Play rules** to apply them and reset appearance triggers. Tail actions include checkboxes for LEDs 1–4; unselected LEDs keep their previous color.
-

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { ActionEngine } from '../src/core/ActionEngine';
 import { RuleEngine } from '../src/core/RuleEngine';
-import { MockRobotAdapter } from '../src/core/RobotAdapter';
+import { MockRobotAdapter } from './MockRobotAdapter';
 import { makeAction, makeProject, makeRule, type Detection, type Rule } from '../src/core/types';
 import { parseProject, ProjectStorage } from '../src/core/ProjectStorage';
 import { FinchAdapter } from '../src/core/FinchAdapter';

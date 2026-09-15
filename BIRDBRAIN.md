@@ -2,7 +2,35 @@
 
 ## Milestone status
 
-**Real Finch A is implemented through the desktop BlueBird HTTP API.** On September 13, 2026, the user confirmed physical green and red beak output, a 10% wheel test, and its automatic stop after approximately one second. Live YOLO person detection has been observed; the combined vision-to-physical-action acceptance test is still pending. Hummingbird is not implemented.
+**Real Finch A and Hummingbird Bit A are implemented through the desktop BlueBird HTTP API.** On September 13, 2026, the user confirmed physical Finch green and red beak output, a 10% wheel test, and its automatic stop after approximately one second. Live YOLO person detection has been observed; the combined vision-to-physical-action acceptance test is still pending.
+
+Hummingbird Bit exposes single LEDs (ports 1–3), tri-color LEDs (1–2), position/rotation servos (1–4), Wait, and Stop outputs. No DC motor or sensor actions are exposed. Production robot simulation has been removed; automated tests intercept transport requests or use a test-only adapter.
+
+September 15, 2026 physical acceptance stopped at identity: `GET http://127.0.0.1:30061/hummingbird/in/isHummingbird/static/A` returned HTTP 200 with body `Not Connected`. No physical output commands were sent. Connect Hummingbird Bit as A in BlueBird before continuing manual LED/servo and vision-rule acceptance.
+
+## Implemented Hummingbird encoding and STOP
+
+The manual position test uses port 2; rotation uses port 1. **Reset project** pauses rules, stops motion, clears all LED ports, and returns the default position port 2 plus position ports referenced by the rules to 90°. Ports referenced by rotation actions are excluded from position reset. Rules and project settings are preserved. The connector does not report a servo's original angle; 90° is the app's reset position.
+
+All output requests below use the existing transport and require response body `200`:
+
+- Single LED: `/hummingbird/out/led/{port}/{value}/A`, value = truncate(brightness × 255 / 100).
+- Tri-color LED: `/hummingbird/out/triled/{port}/{r}/{g}/{b}/A`, hex color decoded to bytes 0–255.
+- Position servo: `/hummingbird/out/servo/{port}/{value}/A`, value = truncate(clamped degrees × 254 / 180), degrees 0–180.
+- Rotation servo: `/hummingbird/out/rotation/{port}/{value}/A`, signed speed −100–100; value = 255 for absolute speed below 10, otherwise truncate(speed × 23 / 100 + 122). Forward 25% sends 127; reverse 25% sends 116; stop sends 255.
+- Initial attachment: `/hummingbird/out/stopall/A` clears prior outputs after positive identity verification.
+
+Conversions follow the linked Python reference below. Timed actions stop their servo port on completion/cancellation. Continuous actions send once on rule entry and release only their owned port on rule loss; position and rotation commands share the same port ownership key. Emergency STOP, disconnect, errors, AI pause, project changes and robot changes cancel actions and attempt rotation stop on all tracked rotation ports. Ordinary STOP preserves LED state and position angles; it never commands a position servo to zero degrees. HTTP acceptance cannot confirm physical behavior.
+
+## Files changed for Hummingbird Bit
+
+- Adapter/capabilities: `src/core/HummingbirdAdapter.ts`, `RobotCapabilities.ts`, `RobotAdapter.ts`, `RobotRouter.ts`, `BirdBrainTransport.ts`.
+- Ownership/storage: `src/core/ActionEngine.ts`, `ProjectStorage.ts`, `types.ts`.
+- UI: `src/App.tsx`, `src/components/HardwareTest.tsx`, `RuleCard.tsx`, `FinchView.tsx`, `src/styles.css`, `public/hummingbird-bit.png`.
+- Tests: `tests/hummingbird.test.tsx`, `hummingbird.browser.mjs`, `MockRobotAdapter.ts`; existing `continuous-motion.test.ts`, `engines.test.ts`, `finch.test.ts`, `tail-sequence.test.ts`, `teachable-machine.test.tsx` import the relocated test double. `tests/teachable-machine.browser.mjs` and `scripts/browser-smoke.mjs` intercept real adapter HTTP instead of selecting a simulator.
+- Documentation: `README.md`, `BIRDBRAIN.md`.
+
+Validation: 102 unit tests pass. Hummingbird browser transport fixture, Teachable Machine browser fixture, and YOLO WASM browser smoke test pass. Browser robot commands were intercepted; these results do not establish physical output behavior.
 
 ## Firmware and connector preparation
 

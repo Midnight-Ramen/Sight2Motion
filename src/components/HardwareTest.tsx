@@ -1,33 +1,39 @@
 import { FinchPhoto } from './FinchView';
-import type { FinchStatus } from '../core/FinchAdapter';
+import type { RobotStatus } from '../core/RobotAdapter';
+import type { Action, RobotType } from '../core/types';
+import { ROBOTS, manualTests } from '../core/RobotCapabilities';
 export function HardwareTest({
   status,
+  robotType,
   busy,
   onAttach,
   onDisconnect,
-  onBeak,
-  onWheels,
+  onAction,
   onStop,
+  onReset,
 }: {
-  status: FinchStatus;
+  status: RobotStatus;
+  robotType: RobotType;
   busy: boolean;
   onAttach: () => void;
   onDisconnect: () => void;
-  onBeak: (color: string) => void;
-  onWheels: () => void;
+  onAction: (action: Action) => void;
   onStop: () => void;
+  onReset: () => void;
 }) {
   const connected = status.connection === 'connected';
+  const name = ROBOTS[robotType].name;
   return (
-    <div className="hardware-test"><FinchPhoto />
-      <h3>Hardware test · Finch A</h3>
+    <div className="hardware-test">
+      {robotType === 'finch' ? <FinchPhoto /> : <div className="finch-photo-frame"><img className="finch-photo" src={`${import.meta.env.BASE_URL}hummingbird-bit.png`} alt="Hummingbird Bit and micro:bit" /></div>}
+      <h3>Hardware test · {name} A</h3>
       <dl>
         <div>
-          <dt>BlueBird Connector</dt>
+          <dt>BirdBrain Connector</dt>
           <dd>{status.connector === 'detected' ? 'Detected' : 'Not detected'}</dd>
         </div>
         <div>
-          <dt>Finch</dt>
+          <dt>{name}</dt>
           <dd>
             {connected
               ? 'Connected'
@@ -43,28 +49,21 @@ export function HardwareTest({
           ? 'Checking…'
           : connected
             ? 'Disconnect from app'
-            : 'Attach to Finch A'}
+            : `Attach to ${name} A`}
       </button>
       <div className="hardware-test-buttons">
-        <button disabled={!connected || busy} onClick={() => onBeak('#00ff00')}>
-          GREEN BEAK
-        </button>
-        <button disabled={!connected || busy} onClick={() => onBeak('#ff0000')}>
-          RED BEAK
-        </button>
-        <button disabled={!connected || busy} onClick={onWheels}>
-          WHEELS 10% · 1 sec
-        </button>
+        {manualTests(robotType).map(test => <button key={test.label} disabled={!connected || busy} onClick={() => onAction(test.action)}>{test.label}</button>)}
         <button className="stop-button" onClick={onStop}>
           STOP
         </button>
       </div>
+      <button disabled={!connected || busy} onClick={onReset}>Reset project</button>
+      <p>Reset pauses rules and turns lights off. {robotType === 'hummingbird' && 'Position servos return to 90°; rotation servos stop. '}Your rules are kept.</p>
       <p>
-        Connect Finch as A in BlueBird first. Place it on a clear floor for the wheel test. Movement
-        is limited to 20% and 1 second during validation.
+        Connect {name} as A in BlueBird first. Test only the outputs you have connected.
       </p>
       <p>
-        HTTP responses confirm a request, not physical motion. Observe the Finch. If communication
+        HTTP responses confirm a request, not physical motion. Observe the robot. If communication
         fails while moving, use its power button.
       </p>
     </div>
