@@ -17,6 +17,7 @@ export class FinchAdapter implements RobotAdapter {
   private generation = 0;
   private contacted = false;
   private motionGeneration = 0;
+  private followSignal: AbortSignal | null = null;
   private motionHeartbeat: ReturnType<typeof setTimeout> | undefined;
   constructor(
     private changed: (status: FinchStatus) => void = () => {},
@@ -88,6 +89,7 @@ export class FinchAdapter implements RobotAdapter {
     }, 1000);
   }
   async stop() {
+    this.followSignal = null;
     ++this.motionGeneration;
     clearTimeout(this.motionHeartbeat);
     this.transport.cancelPending();
@@ -128,7 +130,7 @@ export class FinchAdapter implements RobotAdapter {
   }
   async setWheelSpeeds(left: number, right: number, duration: number, signal: AbortSignal, mode: MotionMode = 'timed') {
     this.requireConnected();
-    const persistent = mode === 'continuous';
+    const persistent = mode === 'continuous' || mode === 'follow';
     // Keep the existing timed diagnostic limits; continuous motion has a renewable safety deadline.
     if (
       ![left, right].every((v) => Number.isFinite(v) && Math.abs(v) <= (persistent ? 100 : 20)) ||
@@ -136,6 +138,18 @@ export class FinchAdapter implements RobotAdapter {
     )
       throw new Error(persistent ? 'Choose wheel speeds between -100% and 100%.' : 'For hardware validation use at most 20% speed and 1000 ms.');
     if (signal.aborted) return;
+    // Steering updates keep the existing renewable drive lease and heartbeat.
+    if (mode === 'follow' && this.followSignal === signal) {
+      const motion = this.motionGeneration;
+      try {
+        await this.transport.command(`/hummingbird/out/wheels/${this.slot}/${Math.round(left)}/${Math.round(right)}/`, signal);
+      } catch (error) {
+        if (motion === this.motionGeneration) await this.stop().catch(() => {});
+        throw error;
+      }
+      return;
+    }
+    this.followSignal = null;
     const motion = ++this.motionGeneration;
     clearTimeout(this.motionHeartbeat);
     await this.watchdog.arm(this.slot, persistent ? 1000 : duration);
@@ -145,6 +159,7 @@ export class FinchAdapter implements RobotAdapter {
       return;
     }
     if (persistent) {
+      if (mode === 'follow') this.followSignal = signal;
       // Renew only the worker's stop deadline, never the wheel command.
       const renew = () => {
         this.motionHeartbeat = setTimeout(async () => {

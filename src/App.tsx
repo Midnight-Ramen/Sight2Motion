@@ -133,6 +133,10 @@ export default function App() {
   const modelVersion = useRef(0);
   const modelWork = useRef<Promise<unknown>>(Promise.resolve());
   const [storage] = useState(() => new ProjectStorage());
+  const cameraSource = project.cameraSource ?? 'local';
+  const [cameraError, setCameraError] = useState(false);
+  const cameraAttempt = useRef(0);
+  const networkImage = useRef<HTMLImageElement>(null);
   const [cameraOn, setCameraOn] = useState(false),
     [cameraBusy, setCameraBusy] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]),
@@ -256,14 +260,14 @@ export default function App() {
       const triggered = rules.evaluate(p.rules, items, performance.now(), capabilitiesFor(p.visionProvider),
         { state: sensorRef.current, configuration: p.sensorConfiguration ?? [], available: p.robotType === 'hummingbird' && hummingbird.connected });
       const wasBusy = actions.busy;
-      void actions.updateRules(triggered, rules.activeRules);
+      void actions.updateRules(triggered, rules.activeRules, { detections: items, width: camera.width || (demo ? 1280 : 0), height: camera.height || (demo ? 720 : 0) });
       if (wasBusy) return;
       if (triggered.length) {
         triggered.forEach((r) => log(`Running “${r.name}”`));
         setLastRule(triggered.map((r) => r.name).join(', '));
       }
     },
-    [actions, robot, rules, log, hummingbird],
+    [actions, robot, rules, log, hummingbird, camera, demo],
   );
   const consume = useCallback((items: VisionResult[]) => {
     setDetections(items);
@@ -304,11 +308,13 @@ export default function App() {
         if (demo)
           items =
             demoVisible && projectRef.current.vision.confidence <= 0.94 ? [demoDetection] : [];
-        else if (cameraOn && modelReady && video.current) {
+        else if (cameraOn && modelReady) {
           if (inference.current) await inference.current;
           if (version !== loopVersion.current) return;
+          const frame = camera.frame;
+          if (!frame) { timer = setTimeout(tick, 100); return; }
           const work = vision
-            .detect(video.current, projectRef.current.vision.confidence)
+            .detect(frame, projectRef.current.vision.confidence)
             .then((result) => {
               items = result;
             });
@@ -321,10 +327,10 @@ export default function App() {
         }
         if (version !== loopVersion.current) return;
         if (vision.capabilities.boundingBoxes) {
-        items = withDetectionRegions(items.filter(hasBoundingBox), demo ? 1280 : video.current?.videoWidth || 1280);
+        items = withDetectionRegions(items.filter(hasBoundingBox), demo ? 1280 : camera.width || 1280);
         items = items.filter(hasBoundingBox).map(d => ({ ...d, areaRatio: detectionAreaRatio(d,
-          demo ? 1280 : video.current?.videoWidth || 1280,
-          demo ? 720 : video.current?.videoHeight || 720) }));
+          demo ? 1280 : camera.width || 1280,
+          demo ? 720 : camera.height || 720) }));
         }
         consume(items);
         const qualifying = items.filter(d => d.confidence >= projectRef.current.vision.confidence);
@@ -366,8 +372,8 @@ export default function App() {
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
-    c.width = demo ? 1280 : video.current?.videoWidth || 1280;
-    c.height = demo ? 720 : video.current?.videoHeight || 720;
+    c.width = demo ? 1280 : camera.width || 1280;
+    c.height = demo ? 720 : camera.height || 720;
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
@@ -398,29 +404,49 @@ export default function App() {
       ctx.fillText(text, d.x + 12, d.y - 10);
     }
   }, [detections, project.vision.visualize, project.rules, demo, visionCapabilities]);
-  async function connectCamera() {
-    pause();
-    setDemo(false);
-    setCameraBusy(true);
-    setNotice('');
+  async function connectCamera(source: 'local' | 'network' = cameraSource) {
+    const attempt = ++cameraAttempt.current;
+    pause(); setDemo(false); setCameraOn(false); setCameraError(false);
+    setCameraBusy(true); setNotice('');
+    const ended = () => {
+      if (attempt !== cameraAttempt.current) return;
+      ++loopVersion.current;
+      setCameraOn(false); setCameraError(true); pause(); consume([]);
+      setNotice('Camera not reachable. Check that the camera is powered on and reachable from this network.');
+    };
     try {
-      const list = await camera.connect(video.current!, device);
-      setDevices(list);
+      if (source === 'network') {
+        await camera.connectNetwork(networkImage.current!, project.networkCameraUrl || 'http://10.0.5.11/stream', ended);
+      } else {
+        const list = await camera.connect(video.current!, device);
+        if (attempt !== cameraAttempt.current) return;
+        setDevices(list);
+        camera.onEnded(ended);
+      }
+      if (attempt !== cameraAttempt.current) return;
       setCameraOn(true);
-      camera.onEnded(() => {
-        setCameraOn(false);
-        pause();
-        setNotice('Camera disconnected. Connect it again to continue.');
-      });
-      log('Camera connected. Your video stays on this device.');
-    } catch {
-      setCameraOn(false);
-      setNotice(
-        'Camera unavailable. Allow camera access in your browser, close other camera apps, and try again. You can also try the demo.',
-      );
+      log('Camera connected. Frames are processed in this browser.');
+    } catch (error) {
+      if (attempt !== cameraAttempt.current) return;
+      console.warn('Camera connection failed:', error);
+      setCameraOn(false); setCameraError(true);
+      setNotice(source === 'network'
+        ? 'Camera not reachable. Check that the camera is powered on and reachable from this network. The browser may have blocked the network camera connection.'
+        : 'Camera unavailable. Allow camera access in your browser, close other camera apps, and try again. You can also try the demo.');
     } finally {
-      setCameraBusy(false);
+      if (attempt === cameraAttempt.current) setCameraBusy(false);
     }
+  }
+  function disconnectCamera() {
+    ++cameraAttempt.current; ++loopVersion.current;
+    camera.stop(); pause(); consume([]);
+    setCameraOn(false); setCameraBusy(false); setCameraError(false); setDemo(false);
+  }
+  function switchCamera(source: 'local' | 'network') {
+    disconnectCamera();
+    edit({ ...project, cameraSource: source,
+      ...(source === 'network' ? { networkCameraUrl: project.networkCameraUrl || 'http://10.0.5.11/stream' } : {}) });
+    void connectCamera(source);
   }
   function resetModel(kind: VisionProviderKind) {
     pause();
@@ -514,6 +540,7 @@ export default function App() {
     log('AI enabled. Your rules are listening.');
   }
   function startDemo() {
+    disconnectCamera();
     if (providerKind !== 'yolo') changeProvider('yolo');
     pause();
     camera.stop();
@@ -598,6 +625,7 @@ export default function App() {
     } finally { setHardwareBusy(false); }
   }
   function replaceProject(p: Project) {
+    disconnectCamera();
     pause();
     if (p.robotType !== robotMode) void selectRobot(p.robotType, false);
     if ((p.visionProvider ?? 'yolo') !== providerKind || p.teachableMachineUrl !== project.teachableMachineUrl)
@@ -745,7 +773,7 @@ export default function App() {
               label: 'Connect camera',
               done: cameraOn || demo,
               icon: Camera,
-              action: connectCamera,
+              action: () => void connectCamera(),
             },
             {
               label: 'Load AI model',
@@ -796,11 +824,26 @@ export default function App() {
               </h2>
               <span className={`status ${cameraOn || demo ? 'active' : ''}`}>
                 <i />
-                {demo ? 'Demo scene' : cameraOn ? 'Camera live' : 'Camera off'}
+                {demo ? 'Demo scene' : cameraSource === 'network' ? cameraBusy ? 'Connecting' : cameraError ? 'Error' : cameraOn ? 'Connected' : 'Disconnected' : cameraOn ? 'Camera live' : 'Camera off'}
               </span>
             </div>
+            <div className="camera-source-controls">
+              <label>Camera Source
+                <select aria-label="Camera Source" value={cameraSource} onChange={e => switchCamera(e.target.value as 'local' | 'network')}>
+                  <option value="local">Laptop Camera</option>
+                  <option value="network">Network Camera</option>
+                </select>
+              </label>
+              {cameraSource === 'network' && <>
+                <label>Stream URL<input aria-label="Stream URL" type="url" value={project.networkCameraUrl ?? 'http://10.0.5.11/stream'}
+                  onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }} /></label>
+                {cameraOn ? <button onClick={disconnectCamera}>Disconnect</button> :
+                  <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
+              </>}
+            </div>
             <div className="camera-stage">
-              <video ref={video} muted playsInline className={cameraOn && !demo ? '' : 'hidden'} />
+              <video ref={video} muted playsInline className={cameraSource === 'local' && cameraOn && !demo ? '' : 'hidden'} />
+              <img ref={networkImage} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn && !demo ? '' : 'hidden'} />
               {!cameraOn && !demo && (
                 <div className="camera-empty">
                   <div className="viewfinder">
@@ -816,7 +859,7 @@ export default function App() {
                     <br />
                     discover the world around you.
                   </p>
-                  <button className="primary" disabled={cameraBusy} onClick={connectCamera}>
+                  <button className="primary" disabled={cameraBusy} onClick={() => void connectCamera()}>
                     {cameraBusy ? (
                       <LoaderCircle className="spin" size={17} />
                     ) : (
@@ -855,16 +898,13 @@ export default function App() {
                     <b>
                       {demo
                         ? '1280 × 720'
-                        : `${video.current?.videoWidth || 0} × ${video.current?.videoHeight || 0}`}
+                        : `${camera.width || 0} × ${camera.height || 0}`}
                     </b>
                   </span>
                   <button
                     aria-label="Disconnect camera or exit demo"
                     onClick={() => {
-                      pause();
-                      camera.stop();
-                      setCameraOn(false);
-                      setDemo(false);
+                      disconnectCamera();
                     }}
                   >
                     <X size={15} />
@@ -873,7 +913,7 @@ export default function App() {
               )}
               <div className="privacy-caption">
                 <ShieldCheck size={13} />
-                Your camera stays yours. Video never leaves this device.
+                Frames are processed in this browser. No video is uploaded.
               </div>
             </div>
             <div className="preview-toolbar">
@@ -1047,7 +1087,7 @@ export default function App() {
                       ))}
                     </select>
                   </label>
-                  <label>
+                  {cameraSource === 'local' && <label>
                     Camera
                     <select
                       aria-label="Camera selection"
@@ -1067,7 +1107,7 @@ export default function App() {
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </label>}
                 </div>
               </div>
             </section>

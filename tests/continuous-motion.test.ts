@@ -251,3 +251,24 @@ it('real Finch attempts STOP if continuous watchdog renewal fails', async () => 
     expect(engine.activeMotorOwnerRuleId).toBeNull();
   } finally { await robot.disconnect(); }
 });
+it('Follow steering updates preserve one drive lease and never insert STOP between frames', async () => {
+  vi.useFakeTimers();
+  const fetcher=vi.fn<typeof fetch>(async url=>new Response(String(url).includes('/in/')?'true':'200'));
+  const watchdog={arm:vi.fn(async()=>{}),disarm:vi.fn()};
+  const robot=new FinchAdapter(()=>{},new BirdBrainTransport(fetcher),'A',watchdog);
+  await robot.connect(); fetcher.mockClear();
+  const signal=new AbortController().signal;
+  try {
+    await robot.setWheelSpeeds(20,20,0,signal,'follow');
+    await robot.setWheelSpeeds(12,20,0,signal,'follow');
+    await robot.setWheelSpeeds(20,12,0,signal,'follow');
+    expect(watchdog.arm).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls.every(c=>String(c[0]).includes('/wheels/'))).toBe(true);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(watchdog.arm).toHaveBeenCalledTimes(2);
+    await robot.stop();
+    const arms=watchdog.arm.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(500); expect(watchdog.arm).toHaveBeenCalledTimes(arms);
+    expect(String(fetcher.mock.calls.at(-1)![0])).toContain('/stopall/A');
+  } finally {await robot.disconnect();}
+});

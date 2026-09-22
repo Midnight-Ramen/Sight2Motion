@@ -1,4 +1,4 @@
-import type { Action, ActionKind } from './types';
+import type { Action, ActionKind, MotionMode } from './types';
 export interface RobotStatus {
   connector: 'not-detected' | 'detected';
   connection: 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -6,6 +6,7 @@ export interface RobotStatus {
 }
 export interface RobotAdapter {
   readonly connected?: boolean;
+  setWheelSpeeds?(left: number, right: number, duration: number, signal: AbortSignal, mode?: MotionMode): Promise<void>;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   stop(): Promise<void>;

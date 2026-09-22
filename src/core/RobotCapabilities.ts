@@ -10,7 +10,8 @@ export const portsFor = (kind: ActionKind): number[] =>
 export const outputKey = (action: Action): string | null => action.kind === 'move' ? 'wheels' :
   ['rotationServo', 'positionServo'].includes(action.kind) ? `servo:${action.port ?? 1}` : null;
 export const continuousOutput = (action: Action) =>
-  ['move', 'rotationServo'].includes(action.kind) && action.mode === 'continuous';
+  (['move', 'rotationServo'].includes(action.kind) && action.mode === 'continuous') ||
+  (action.kind === 'move' && action.mode === 'follow');
 export function resetActions(kind: RobotType, rules: Rule[]): Action[] {
   if (kind === 'finch') return [
     { ...makeAction('beak'), color: '#000000' },

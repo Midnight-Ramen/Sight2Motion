@@ -1,3 +1,4 @@
+import { FOLLOW_DEFAULTS } from './FollowController';
 import { DetectionManager } from './DetectionManager';
 import type { VisionResult, Rule } from './types';
 import { compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from './VisionCapabilities';
@@ -29,6 +30,8 @@ export class RuleEngine {
         rule.region ?? 'anywhere',
         rule.distance ?? 'any',
         rule.nearThreshold,
+        sensorPass ? Math.max(0, ...rule.actions.filter(a => a.enabled && a.kind === 'move' && a.mode === 'follow')
+          .map(a => a.lostTargetTimeoutMs ?? FOLLOW_DEFAULTS.lostTargetTimeoutMs)) : 0,
       );
       const state = this.states.get(rule.id) ?? { fired: false, qualified: false, last: -Infinity };
       if (presence.appeared) {

@@ -1,5 +1,7 @@
 import { actionDefinitions, validTailSequence, type Action, type Project } from './types';
 import { normalizeTeachableMachineUrl } from './TeachableMachineUrl';
+import { FOLLOW_DEFAULTS } from './FollowController';
+import { networkCameraUrl } from './NetworkCameraSource';
 import { SENSOR_TYPES, SENSOR_OPERATORS, sensorDescriptor } from './Sensors';
 const KEY = 'vision-robot-studio.projects.v1';
 const number = (v: unknown, min: number, max: number) =>
@@ -12,6 +14,8 @@ export function parseProject(text: string): Project {
   if (
     !obj(p) ||
     p.version !== 1 ||
+    (p.cameraSource !== undefined && !['local', 'network'].includes(String(p.cameraSource))) ||
+    (p.networkCameraUrl !== undefined && typeof p.networkCameraUrl !== 'string') ||
     typeof p.id !== 'string' ||
     typeof p.name !== 'string' ||
     p.name.length > 100 ||
@@ -75,7 +79,13 @@ export function parseProject(text: string): Project {
         (a.kind === 'singleLed' && !number(a.brightness, 0, 100)) ||
         (a.kind === 'positionServo' && !number(a.angle, 0, 180)) ||
         (a.kind === 'rotationServo' && !['forward', 'backward'].includes(String(a.direction))) ||
-        (a.mode !== undefined && !['timed', 'continuous'].includes(String(a.mode))) ||
+        (a.mode !== undefined && !['timed', 'continuous', 'follow'].includes(String(a.mode))) ||
+        (a.mode === 'follow' && (a.kind !== 'move' || p.robotType !== 'finch' ||
+          (a.followSpeed !== undefined && !number(a.followSpeed, 0, 100)) ||
+          (a.followDistance !== undefined && !['close', 'medium', 'far'].includes(String(a.followDistance))) ||
+          (a.steeringSensitivity !== undefined && !number(a.steeringSensitivity, 0, 100)) ||
+          (a.centerDeadZone !== undefined && !number(a.centerDeadZone, 0, 0.5)) ||
+          (a.lostTargetTimeoutMs !== undefined && !number(a.lostTargetTimeoutMs, 100, 3000)))) ||
         (a.kind === 'tailLightSequence' && !validTailSequence(a as Partial<Action>)) ||
         (a.tailLights !== undefined && (!Array.isArray(a.tailLights) || a.tailLights.length > 4 || a.tailLights.some(v => ![1, 2, 3, 4].includes(v as number)))) ||
         typeof a.color !== 'string' ||
@@ -100,6 +110,8 @@ export function parseProject(text: string): Project {
   // Keep only our schema: extra imported fields (including media) are discarded.
   return {
     version: 1,
+    cameraSource: valid.cameraSource ?? 'local',
+    ...(valid.networkCameraUrl ? { networkCameraUrl: networkCameraUrl(valid.networkCameraUrl) } : {}),
     visionProvider: valid.visionProvider ?? 'yolo',
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
@@ -132,6 +144,13 @@ export function parseProject(text: string): Project {
         kind: a.kind,
         enabled: a.enabled,
         mode: a.mode ?? 'timed',
+        ...(a.mode === 'follow' ? {
+          followSpeed: a.followSpeed ?? FOLLOW_DEFAULTS.followSpeed,
+          followDistance: a.followDistance ?? FOLLOW_DEFAULTS.followDistance,
+          steeringSensitivity: a.steeringSensitivity ?? FOLLOW_DEFAULTS.steeringSensitivity,
+          centerDeadZone: a.centerDeadZone ?? FOLLOW_DEFAULTS.centerDeadZone,
+          lostTargetTimeoutMs: a.lostTargetTimeoutMs ?? FOLLOW_DEFAULTS.lostTargetTimeoutMs,
+        } : {}),
         ...(['singleLed', 'triLed', 'positionServo', 'rotationServo'].includes(a.kind) ? { port: a.port } : {}),
         ...(a.kind === 'singleLed' ? { brightness: a.brightness } : {}),
         ...(a.kind === 'positionServo' ? { angle: a.angle } : {}),

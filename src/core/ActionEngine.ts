@@ -1,10 +1,17 @@
 import { delay, type RobotAdapter } from './RobotAdapter';
 import { validTailSequence } from './types';
-import type { Action, Rule } from './types';
+import { FollowController } from './FollowController';
+import { followTargets } from './DetectionManager';
+import type { Action, Rule, VisionResult } from './types';
 import { continuousOutput as continuous, outputKey } from './RobotCapabilities';
 type Step = { action: Action; ruleId?: string };
 /** One sequence at a time; busy triggers are dropped, never queued unboundedly. */
 export class ActionEngine {
+  private frameRevision = 0;
+  private follow?: { ruleId: string; controller: FollowController };
+  private visionFrame?: { detections: VisionResult[]; width: number; height: number; capturedAt: number };
+  private currentRules: Rule[] = [];
+  private cancelFollow() { this.follow?.controller.cancel(); this.follow = undefined; }
   private controller: AbortController | null = null;
   private running: Promise<boolean> | null = null;
   private activeRuleIds = new Set<string>();
@@ -22,6 +29,8 @@ export class ActionEngine {
     private onError: () => void = () => {},
   ) {}
   async stop() {
+    ++this.frameRevision;
+    this.cancelFollow();
     ++this.revision;
     this.activeRuleIds.clear();
     this.outputOwners.clear();
@@ -37,7 +46,20 @@ export class ActionEngine {
     }
   }
   /** Feed every detection evaluation, including while a normal sequence is busy. */
-  async updateRules(triggered: Rule[], active: Rule[]): Promise<boolean> {
+  async updateRules(triggered: Rule[], active: Rule[], frame?: { detections: VisionResult[]; width: number; height: number }): Promise<boolean> {
+    const frameRevision = ++this.frameRevision;
+    const capturedAt = performance.now();
+    this.visionFrame = frame ? { ...frame, capturedAt } : undefined;
+    this.currentRules = active;
+    const result = await this.applyRules(triggered, active);
+    if (frameRevision !== this.frameRevision) return result;
+    const follow = this.follow;
+    const rule = active.find(r => r.id === follow?.ruleId);
+    if (frame && follow && rule && this.outputOwners.get('wheels') === rule.id)
+      await follow.controller.update(followTargets(rule, frame.detections, frame.width, frame.height), capturedAt);
+    return result;
+  }
+  private async applyRules(triggered: Rule[], active: Rule[]): Promise<boolean> {
     const previous = this.activeRuleIds;
     this.activeRuleIds = new Set(active.map(r => r.id));
     const entering = active.filter(r => !previous.has(r.id));
@@ -62,10 +84,12 @@ export class ActionEngine {
       if (explicitStop || lostOutputs.length) {
         try {
           if (explicitStop) {
+            this.cancelFollow();
             this.outputOwners.clear();
             await this.robot.stop();
           } else {
             await Promise.all(lostOutputs.filter(key => !replacements.has(key)).map(async key => {
+              if (key === 'wheels') this.cancelFollow();
               this.outputOwners.delete(key);
               if (this.robot.stopOutput) await this.robot.stopOutput(key);
               else await this.robot.stop();
@@ -110,6 +134,7 @@ export class ActionEngine {
           continue;
         }
         const key = outputKey(action);
+        if (key === 'wheels' || action.kind === 'stop') this.cancelFollow();
         if (continuous(action)) {
           if (!ruleId || !this.activeRuleIds.has(ruleId)) continue;
           this.outputOwners.set(key!, ruleId);
@@ -122,10 +147,25 @@ export class ActionEngine {
           action.kind === 'beak'
             ? `Beak → ${action.color}`
             : action.kind === 'move'
-              ? `Move ${action.direction} → ${continuous(action) ? 'while rule matches' : `${action.duration} ms`}`
+              ? action.mode === 'follow' ? 'Follow detected target' : `Move ${action.direction} → ${continuous(action) ? 'while rule matches' : `${action.duration} ms`}`
               : `${action.kind} action`,
         );
-        if (action.kind === 'tailLightSequence') {
+        if (action.kind === 'move' && action.mode === 'follow') {
+          if (!ruleId || !this.robot.setWheelSpeeds || !this.visionFrame) continue;
+          const follow = new FollowController(action,
+            (left, right, signal) => this.robot.setWheelSpeeds!(left, right, 0, signal, 'follow'),
+            () => {
+              if (this.follow?.controller !== follow || this.outputOwners.get('wheels') !== ruleId) return;
+              this.cancelFollow();
+              this.outputOwners.delete('wheels');
+              this.activeRuleIds.delete(ruleId);
+              void (this.robot.stopOutput ? this.robot.stopOutput('wheels') : this.robot.stop()).catch(() => { this.onError(); void this.stop(); });
+            },
+            () => { if (this.follow?.controller === follow) { this.onError(); void this.stop(); } });
+          this.follow = { ruleId, controller: follow };
+          const rule = this.currentRules.find(r => r.id === ruleId);
+          if (rule) await follow.update(followTargets(rule, this.visionFrame.detections, this.visionFrame.width, this.visionFrame.height), this.visionFrame.capturedAt);
+        } else if (action.kind === 'tailLightSequence') {
           if (!validTailSequence(action)) throw new Error('Invalid tail light sequence.');
           const signal = controller.signal;
           const setLight = async (light: number, color: string) => {
@@ -149,6 +189,7 @@ export class ActionEngine {
     } catch (error) {
       // Each timed adapter action stops its own output in finally. A handoff must not stop other outputs.
       if (controller.signal.aborted) return false;
+      this.cancelFollow();
       this.outputOwners.clear();
       if (!controller.signal.aborted) {
         ++this.revision;

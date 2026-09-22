@@ -1,9 +1,13 @@
 import type { RobotAdapter } from './RobotAdapter';
-import type { Action } from './types';
+import type { Action, MotionMode } from './types';
 /** Keeps ActionEngine bound to a generic adapter as the UI changes selection. */
 export class RobotRouter implements RobotAdapter {
   constructor(public current: RobotAdapter) {}
   get connected() { return this.current.connected ?? false; }
+  setWheelSpeeds(left: number, right: number, duration: number, signal: AbortSignal, mode?: MotionMode) {
+    if (!this.current.setWheelSpeeds) return Promise.reject(new Error('Follow requires Finch wheel control.'));
+    return this.current.setWheelSpeeds(left, right, duration, signal, mode);
+  }
   connect() {
     return this.current.connect();
   }

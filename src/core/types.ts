@@ -24,12 +24,17 @@ export const hasBoundingBox = (result: VisionResult): result is Detection => 'x'
 export type VisionProviderKind = 'yolo' | 'teachable-machine';
 export type ActionKind = 'beak' | 'tail' | 'tailLightSequence' | 'move' | 'sound' | 'wait' | 'stop' | 'singleLed' | 'triLed' | 'positionServo' | 'rotationServo';
 export type RobotType = 'finch' | 'hummingbird';
-export type MotionMode = 'timed' | 'continuous';
+export type MotionMode = 'timed' | 'continuous' | 'follow';
 export interface Action {
   id: string;
   kind: ActionKind;
   enabled: boolean;
   mode?: MotionMode;
+  followSpeed?: number;
+  followDistance?: 'close' | 'medium' | 'far';
+  steeringSensitivity?: number;
+  centerDeadZone?: number;
+  lostTargetTimeoutMs?: number;
   port?: number;
   brightness?: number;
   angle?: number;
@@ -69,6 +74,8 @@ export interface VisionSettings {
   model: string;
 }
 export interface Project {
+  cameraSource?: 'local' | 'network';
+  networkCameraUrl?: string;
   sensorConfiguration?: SensorDescriptor[];
   visionProvider: VisionProviderKind;
   teachableMachineUrl?: string;
@@ -126,6 +133,7 @@ export const makeRule = (): Rule => ({
   actions: [makeAction()],
 });
 export const makeProject = (): Project => ({
+  cameraSource: 'local',
   sensorConfiguration: [],
   visionProvider: 'yolo',
   version: 1,

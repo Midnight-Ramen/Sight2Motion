@@ -11,6 +11,7 @@ import {
 import { objectLabel } from '../core/ProjectObjects';
 import { SensorConditions } from './SensorConditions';
 import type { SensorDescriptor } from '../core/Sensors';
+import { FOLLOW_DEFAULTS } from '../core/FollowController';
 import { portsFor } from '../core/RobotCapabilities';
 import { classificationRule, compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from '../core/VisionCapabilities';
 export function RuleCard({
@@ -299,12 +300,31 @@ export function RuleCard({
                   <>
                     <label>Movement
                       <select aria-label={`Action ${i + 1} movement mode`} value={a.mode ?? 'timed'}
-                        onChange={e => updateAction(a.id, { mode: e.target.value as Action['mode'] })}>
+                        onChange={e => updateAction(a.id, { ...(e.target.value === 'follow' ? FOLLOW_DEFAULTS : {}), mode: e.target.value as Action['mode'] })}>
                         <option value="timed">Timed</option>
                         <option value="continuous">Continuous while rule matches</option>
+                        {a.kind === 'move' && <option value="follow" disabled={!visionCapabilities.boundingBoxes}>Follow detected target</option>}
                       </select>
                     </label>
-                    {a.mode === 'continuous' && <small>Runs while this rule remains true.</small>}
+                    {a.mode === 'follow' && <>
+                      <small>Follow already adjusts position and distance automatically.</small>
+                      {!visionCapabilities.boundingBoxes && <small role="status">Follow requires a model with bounding boxes.</small>}
+                      <label>Follow speed %<input type="number" min={0} max={100} value={a.followSpeed ?? 35}
+                        onChange={e => updateAction(a.id, { followSpeed: Math.max(0, Math.min(100, +e.target.value)) })} /></label>
+                      <label>Follow distance<select value={a.followDistance ?? 'medium'} onChange={e => updateAction(a.id, { followDistance: e.target.value as Action['followDistance'] })}>
+                        <option value="close">Close</option><option value="medium">Medium</option><option value="far">Far</option>
+                      </select></label>
+                      <details><summary>Advanced</summary>
+                        <label>Steering sensitivity %<input type="number" min={0} max={100} value={a.steeringSensitivity ?? 50}
+                          onChange={e => updateAction(a.id, { steeringSensitivity: Math.max(0, Math.min(100, +e.target.value)) })} /></label>
+                        <label>Center tolerance %<input type="number" min={0} max={50} value={Math.round((a.centerDeadZone ?? 0.15) * 100)}
+                          onChange={e => updateAction(a.id, { centerDeadZone: Math.max(0, Math.min(50, +e.target.value)) / 100 })} /></label>
+                        <label>Lost target timeout (ms)<input type="number" min={100} max={3000} step={50} value={a.lostTargetTimeoutMs ?? 750}
+                          onChange={e => updateAction(a.id, { lostTargetTimeoutMs: Math.max(100, Math.min(3000, +e.target.value)) })} /></label>
+                      </details>
+                    </>}
+                    {a.mode !== 'follow' && <>
+                    {a.mode === 'continuous'  && <small>Runs while this rule remains true.</small>}
                     <select
                       aria-label="Move direction"
                       value={a.direction}
@@ -328,6 +348,7 @@ export function RuleCard({
                         }
                       />
                     </label>
+                    </>}
                   </>
                 )}
                 {a.kind === 'sound' && (
@@ -341,7 +362,7 @@ export function RuleCard({
                     ))}
                   </select>
                 )}
-                {(['wait', 'sound'].includes(a.kind) || (['move', 'rotationServo'].includes(a.kind) && a.mode !== 'continuous')) && (
+                {(['wait', 'sound'].includes(a.kind) || (['move', 'rotationServo'].includes(a.kind) && a.mode !== 'continuous' && a.mode !== 'follow')) && (
                   <label>
                     Duration (ms)
                     <input
