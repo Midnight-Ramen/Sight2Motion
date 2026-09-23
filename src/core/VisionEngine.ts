@@ -1,6 +1,8 @@
 import * as ort from 'onnxruntime-web/webgpu';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url';
 import wasmModuleUrl from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url';
+import gpuWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import gpuModuleUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import type { Detection } from './types';
 
 export const CLASSES =
@@ -33,7 +35,7 @@ export function decodeYolo(
   height: number,
 ): Detection[] {
   if (dims.length !== 3 || dims[0] !== 1 || dims[1] !== 84)
-    throw new Error('Use a YOLOv8 COCO detection model exported without NMS.');
+    throw new Error('Use a YOLO11 COCO detection model exported without NMS.');
   const count = dims[2],
     detections: Detection[] = [];
   for (let i = 0; i < count; i++) {
@@ -79,6 +81,9 @@ export class YoloVisionEngine implements VisionEngine {
   getClasses(): readonly string[] { return CLASSES; }
   private session: ort.InferenceSession | null = null;
   private canvas = document.createElement('canvas');
+  private input = new Float32Array(3 * 640 * 640);
+  private backend = 'Not loaded';
+  private lastTimingLog = 0;
   private createSession(model: string | Uint8Array, executionProviders: string[]) {
     return typeof model === 'string'
       ? ort.InferenceSession.create(model, { executionProviders })
@@ -86,14 +91,37 @@ export class YoloVisionEngine implements VisionEngine {
   }
   async load(model: string | Uint8Array) {
     await this.dispose();
+    const useGpu = !!('gpu' in navigator && navigator.gpu);
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.wasmPaths = {
-      wasm: new URL(wasmUrl, document.baseURI).href,
-      mjs: new URL(wasmModuleUrl, document.baseURI).href,
+      wasm: new URL(useGpu ? gpuWasmUrl : wasmUrl, document.baseURI).href,
+      mjs: new URL(useGpu ? gpuModuleUrl : wasmModuleUrl, document.baseURI).href,
     };
-    ort.env.wasm.proxy = true;
-    const backend = 'WASM worker';
-    this.session = await this.createSession(model, ['wasm']);
+    // Proxy mode is fixed before ORT initializes; WebGPU cannot use the WASM proxy.
+    ort.env.wasm.proxy = !useGpu;
+    const bytes = typeof model === 'string' ? await (async () => {
+      const response = await fetch(model);
+      if (!response.ok) throw new Error(`YOLO11n download failed: HTTP ${response.status}.`);
+      return new Uint8Array(await response.arrayBuffer());
+    })() : model;
+    let gpuError: unknown;
+    if (!ort.env.wasm.proxy) {
+      try {
+        this.session = await this.createSession(bytes, ['webgpu']);
+        this.backend = 'WebGPU';
+      } catch (error) {
+        gpuError = error;
+        console.warn('YOLO11n WebGPU initialization failed; trying WASM.', error);
+      }
+    }
+    if (!this.session) {
+      try {
+        this.session = await this.createSession(bytes, ['wasm']);
+        this.backend = ort.env.wasm.proxy ? 'WASM worker' : 'WASM';
+      } catch (error) {
+        throw new Error(`YOLO11n WASM load failed: ${String(error)}${gpuError ? `; WebGPU failed: ${String(gpuError)}` : ''}`);
+      }
+    }
     const metadata = this.session.inputMetadata[0];
     const shape = metadata?.isTensor ? metadata.shape : undefined;
     if (
@@ -102,12 +130,19 @@ export class YoloVisionEngine implements VisionEngine {
       shape[0] !== 1 ||
       shape[1] !== 3 ||
       shape[2] !== 640 ||
-      shape[3] !== 640
+      shape[3] !== 640 || !metadata.isTensor || metadata.type !== 'float32'
     ) {
       await this.dispose();
-      throw new Error('Expected a static 640 × 640 YOLOv8 model.');
+      throw new Error('Expected a static 640 × 640 YOLO11 model.');
     }
-    return backend;
+    const output = this.session.outputMetadata[0];
+    if (!output?.isTensor || output.type !== 'float32' ||
+      output.shape.length !== 3 || output.shape[0] !== 1 || output.shape[1] !== 84 || output.shape[2] !== 8400) {
+      await this.dispose();
+      throw new Error('Expected YOLO11n FP32 output [1,84,8400], without embedded NMS.');
+    }
+    console.info('YOLO11n ready', { backend: this.backend, input: shape, output: output.shape });
+    return this.backend;
   }
   async detect(source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, threshold: number) {
     if (!this.session) throw new Error('Load a model first.');
@@ -130,14 +165,14 @@ export class YoloVisionEngine implements VisionEngine {
       drawH = Math.round(height * scale),
       padX = Math.floor((size - drawW) / 2),
       padY = Math.floor((size - drawH) / 2);
-    this.canvas.width = size;
-    this.canvas.height = size;
+    if (this.canvas.width !== size) this.canvas.width = size;
+    if (this.canvas.height !== size) this.canvas.height = size;
     const ctx = this.canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.fillStyle = 'rgb(114,114,114)';
     ctx.fillRect(0, 0, size, size);
     ctx.drawImage(source, padX, padY, drawW, drawH);
-    const pixels = ctx.getImageData(0, 0, size, size).data,
-      input = new Float32Array(3 * size * size);
+    if (!this.input.byteLength) this.input = new Float32Array(3 * size * size);
+    const pixels = ctx.getImageData(0, 0, size, size).data, input = this.input;
     for (let i = 0; i < size * size; i++) {
       input[i] = pixels[i * 4] / 255;
       input[i + size * size] = pixels[i * 4 + 1] / 255;
@@ -146,7 +181,13 @@ export class YoloVisionEngine implements VisionEngine {
     const tensor = new ort.Tensor('float32', input, [1, 3, size, size]);
     let outputs: ort.InferenceSession.ReturnType | undefined;
     try {
+      const started = performance.now();
       outputs = await this.session.run({ [this.session.inputNames[0]]: tensor });
+      const elapsed = performance.now() - started;
+      if (performance.now() - this.lastTimingLog > 5000) {
+        console.info(`YOLO11n · ${this.backend} · inference ${elapsed.toFixed(1)} ms`);
+        this.lastTimingLog = performance.now();
+      }
       const output = outputs[this.session.outputNames[0]];
       return decodeYolo(
         output.data as Float32Array,

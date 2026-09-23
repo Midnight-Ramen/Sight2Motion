@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include "esp_camera.h"
 #include <lwip/sockets.h>
 #include <errno.h>
@@ -20,7 +21,18 @@ static void diagnostic(const char *format, ...) {
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
+// Assign a unique number (1-4) before flashing each camera.
+constexpr unsigned CAMERA_NUMBER = 1;
+char cameraHostname[32];
 WiFiServer server(80);
+
+static void startDiscovery() {
+    MDNS.end();
+    if (MDNS.begin(cameraHostname)) {
+        MDNS.addService("http", "tcp", 80);
+        diagnostic("Camera %u: http://%s.local/stream\n", CAMERA_NUMBER, cameraHostname);
+    } else diagnostic("mDNS failed; use IP stream URL\n");
+}
 
 static bool cameraReady = false;
 
@@ -108,6 +120,8 @@ void setup()
         s->set_saturation(s, -2);  // lower the saturation
     }
 
+    snprintf(cameraHostname, sizeof(cameraHostname), "robosight-cam-%02u", CAMERA_NUMBER);
+    WiFi.setHostname(cameraHostname);
     WiFi.setAutoReconnect(true);
     WiFi.begin(ssid, password);
     WiFi.setSleep(false);
@@ -131,6 +145,7 @@ void setup()
     diagnostic("IP address: ");
     diagnostic("%s\n", WiFi.localIP().toString().c_str());
     server.begin();
+    startDiscovery();
     diagnostic("Stream URL: http://%s/\n", WiFi.localIP().toString().c_str());
 }
 
@@ -181,7 +196,7 @@ void loop() {
         delay(20); return;
     }
     if (!wifiWasConnected) {
-        wifiWasConnected = true; server.begin();
+        wifiWasConnected = true; server.begin(); startDiscovery();
         diagnostic("WiFi reconnected; stream URL: http://%s/stream\n", WiFi.localIP().toString().c_str());
     }
     if (!pendingClient && server.hasClient()) {

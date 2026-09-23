@@ -19,14 +19,37 @@ it('drives centered targets equally and honors center tolerance',()=>{
   expect(followWheels(box(),action)[0]).toBe(followWheels(box(),action)[1]);
   expect(followWheels(box(0.56),action)[0]).toBe(followWheels(box(0.56),action)[1]);
 });
-it('curves progressively left and right without pivoting',()=>{
+it('steers progressively left and right, allowing a pivot within the speed cap',()=>{
   const slight=followWheels(box(0.4),action), far=followWheels(box(0.1),action),right=followWheels(box(0.9),action);
   expect(slight[0]).toBeLessThan(slight[1]); expect(far[1]-far[0]).toBeGreaterThan(slight[1]-slight[0]);
-  expect(right[0]).toBeGreaterThan(right[1]); expect([...slight,...far,...right].every(v=>v>=0&&v<=35)).toBe(true);
+  expect(right).toEqual([far[1],far[0]]); expect(far[0]).toBe(0);
+  expect([...slight,...far,...right].every(v=>Math.abs(v)<=35)).toBe(true);
 });
-it('stops at target size or closer, including off-center targets',()=>{
+it('stops forward at target size but can turn toward off-center targets',()=>{
   expect(followWheels(box(0.5,0.14),action)).toEqual([0,0]);
-  expect(followWheels(box(0.1,0.3),action)).toEqual([0,0]);
+  const wheels=followWheels(box(0.1,0.3),action);
+  expect(wheels[0]).toBe(0); expect(wheels[1]).toBeGreaterThan(0);
+});
+it('provides strong steering at 25 percent even near the close follow distance',()=>{
+  const settings={...action,followSpeed:25,steeringSensitivity:90,centerDeadZone:0.08,followDistance:'close' as const};
+  for(const area of [0.04,0.20,0.23]) {
+    const left=followWheels(box(0.25,area),settings);
+    expect(left[0]).toBe(0); expect(left[1]).toBeGreaterThan(10); expect(left[1]).toBeLessThanOrEqual(25);
+    expect(followWheels(box(0.75,area),settings)).toEqual([left[1],left[0]]);
+  }
+  expect(followWheels(box(0.25),{...settings,followSpeed:0})).toEqual([0,0]);
+});
+it('keeps steering through the distance hold and stops on target loss',async()=>{
+  vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined),lost=vi.fn();
+  const c=new FollowController({...action,followSpeed:25},send,lost,vi.fn());
+  for(const area of [0.14,0.12,0.125]) {
+    await c.update([box(0.25,area)]);
+    const [left,right]=send.mock.calls.at(-1)!;
+    expect(left).toBe(0); expect(right).toBeGreaterThan(0);
+  }
+  await vi.advanceTimersByTimeAsync(750); expect(lost).toHaveBeenCalledOnce();
+  const count=send.mock.calls.length; await c.update([box(0.25)]);
+  expect(send).toHaveBeenCalledTimes(count);
 });
 it('selects initial largest then nearest previous target',async()=>{
   vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined);
@@ -102,11 +125,11 @@ it('holds still through distance-boundary jitter and resumes after a clear retre
   expect(send).toHaveBeenCalledTimes(count);
   await c.update([box(0.5,0.07)]); expect(send.mock.calls.at(-1)![0]).toBeGreaterThan(0); c.cancel();
 });
-it('smooths steering changes while keeping the outside wheel moving', async()=>{
+it('uses fresh horizontal feedback to stop turning as soon as the target centers', async()=>{
   vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined);
   const c=new FollowController(action,send,vi.fn(),vi.fn()); await c.update([box()]);
   await c.update([box(0.1)]); const first=send.mock.calls.at(-1)!.slice(0,2);
-  await c.update([box(0.1)]); const second=send.mock.calls.at(-1)!.slice(0,2);
-  expect(first[0]).toBeGreaterThan(second[0]); expect(first[1]).toBe(second[1]);
-  expect(first[0]).toBeGreaterThan(followWheels(box(0.1),action)[0]); c.cancel();
+  expect(first[0]).toBeLessThan(first[1]);
+  await c.update([box()]); const centered=send.mock.calls.at(-1)!.slice(0,2);
+  expect(centered[0]).toBe(centered[1]); c.cancel();
 });

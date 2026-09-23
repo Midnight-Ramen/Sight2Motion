@@ -14,6 +14,7 @@ export function parseProject(text: string): Project {
   if (
     !obj(p) ||
     p.version !== 1 ||
+    (p.mirrorHorizontal !== undefined && typeof p.mirrorHorizontal !== 'boolean') ||
     (p.cameraSource !== undefined && !['local', 'network'].includes(String(p.cameraSource))) ||
     (p.networkCameraUrl !== undefined && typeof p.networkCameraUrl !== 'string') ||
     typeof p.id !== 'string' ||
@@ -111,6 +112,7 @@ export function parseProject(text: string): Project {
   return {
     version: 1,
     cameraSource: valid.cameraSource ?? 'local',
+    mirrorHorizontal: valid.mirrorHorizontal ?? false,
     ...(valid.networkCameraUrl ? { networkCameraUrl: networkCameraUrl(valid.networkCameraUrl) } : {}),
     visionProvider: valid.visionProvider ?? 'yolo',
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),

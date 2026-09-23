@@ -4,7 +4,7 @@ A student-friendly, local-first vision playground built with React, strict TypeS
 
 ## Milestone 1
 
-Connect a camera, load YOLOv8n, see labeled bounding boxes, and use a visual **IF person → THEN beak green** rule with a real Finch. Finch 2 and Hummingbird Bit use BlueBird Connector device A. A clearly labeled demo supplies detections without a camera or model.
+Connect a camera, load YOLO11n, see labeled bounding boxes, and use a visual **IF person → THEN beak green** rule with a real Finch. Finch 2 and Hummingbird Bit use BlueBird Connector device A. A clearly labeled demo supplies detections without a camera or model.
 
 Also included: editable action sequences, drag and arrow-button reordering, timing/cooldown controls, a STOP button and spacebar shortcut, activity log, and local project save/load/duplicate/import/export.
 
@@ -35,18 +35,18 @@ Finch supports beak color, tail LEDs, wheel movement, and STOP. Hummingbird Bit 
 
 ## Models and local processing
 
-The default 12.8 MB YOLOv8n ONNX model is included in this repository at `public/models/yolov8n.onnx`, so **Load local model** works after cloning. `npm run setup:model` verifies its SHA-256 and, if missing or changed, downloads the original export from [webml/yolov8n](https://huggingface.co/webml/yolov8n/blob/main/onnx/yolov8n.onnx). Downloading weights requires internet; running inference does not. Other ONNX model files remain excluded from git.
+The default 10.7 MB YOLO11n ONNX model is included in this repository at `public/models/yolo11n.onnx`, so **Load local model** works after cloning. `npm run setup:model` verifies its SHA-256 and, if missing or changed, downloads the original export from [webnn/yolo11n](https://huggingface.co/webnn/yolo11n/blob/9c5acfdd74aaff2d0f47c51b878506361039a51f/onnx/yolo11n.onnx). Downloading weights requires internet; running inference does not. Other ONNX model files remain excluded from git.
 
-You can instead choose a compatible `.onnx` file with the folder button. The implemented contract is **YOLOv8 COCO object detection, float32 input `[1,3,640,640]`, output `[1,84,N]`, no embedded NMS, 80 COCO labels**. Other label sets, dynamic image sizes, YOLOv5 objectness tensors, segmentation, and NMS-integrated exports are not supported yet. Model filenames are not evidence of compatibility.
+You can instead choose a compatible `.onnx` file with the folder button. The implemented contract is **YOLO11 COCO object detection, float32 input `[1,3,640,640]`, output `[1,84,8400]`, no embedded NMS, 80 COCO labels**. Other label sets, dynamic image sizes, YOLOv5 objectness tensors, segmentation, and NMS-integrated exports are not supported yet. Model filenames are not evidence of compatibility.
 
 To export your own copy from Ultralytics (on a teacher machine with Python):
 
 ```sh
 python -m pip install ultralytics onnx
- yolo export model=yolov8n.pt format=onnx imgsz=640 batch=1 dynamic=False half=False nms=False opset=17
+ yolo export model=yolo11n.pt format=onnx imgsz=640 batch=1 dynamic=False half=False nms=False opset=17
 ```
 
-Copy the exported model to `public/models/yolov8n.onnx`. See [Ultralytics export documentation](https://docs.ultralytics.com/modes/export/). YOLO weights and Ultralytics code have their own [AGPL-3.0 / enterprise licensing terms](https://www.ultralytics.com/license); do not assume this repository changes their license.
+Copy the exported model to `public/models/yolo11n.onnx`. See [Ultralytics export documentation](https://docs.ultralytics.com/modes/export/). YOLO weights and Ultralytics code have their own [AGPL-3.0 / enterprise licensing terms](https://www.ultralytics.com/license); do not assume this repository changes their license.
 
 The browser tries WebGPU with WASM operator fallback, then retries a WASM-only session if initialization fails. ONNX Runtime's WebGPU support and fallback are described in its [official documentation](https://onnxruntime.ai/docs/tutorials/web/ep-webgpu.html). WASM uses one thread so cross-origin isolation is not required. Lower the requested FPS on slower classroom devices; the displayed FPS reflects processing capacity. A single inference is in flight at any time. Runtime WASM assets ship with the app, rather than loading from a CDN. Fonts may load from Google Fonts; system fonts work offline. Camera images are never saved.
 

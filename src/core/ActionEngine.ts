@@ -1,6 +1,7 @@
 import { delay, type RobotAdapter } from './RobotAdapter';
-import { validTailSequence } from './types';
-import { FollowController } from './FollowController';
+import { makeAction, validTailSequence } from './types';
+import { FollowController, type TrackedFollowSettings } from './FollowController';
+import type { TrackedTarget } from './TargetTracker';
 import { followTargets } from './DetectionManager';
 import type { Action, Rule, VisionResult } from './types';
 import { continuousOutput as continuous, outputKey } from './RobotCapabilities';
@@ -9,6 +10,38 @@ type Step = { action: Action; ruleId?: string };
 export class ActionEngine {
   private frameRevision = 0;
   private follow?: { ruleId: string; controller: FollowController };
+  private selectedFollow?: FollowController;
+  private selectedStart = 0;
+  get followingSelectedTarget() { return !!this.selectedFollow; }
+  get selectedFollowDiagnostics() { return this.selectedFollow?.diagnostics ?? null; }
+  async startSelectedFollow(target: TrackedTarget, capturedAt: number, timeout: number, config: TrackedFollowSettings) {
+    const stopping = this.stop();
+    const revision = this.revision, start = ++this.selectedStart;
+    await stopping;
+    await this.running;
+    if (revision !== this.revision || start !== this.selectedStart || !this.robot.connected || !this.robot.setWheelSpeeds) return;
+    if (target.state !== 'TRACKING' || target.targetLost || target.trackingConfidence < config.minConfidence) return;
+    const controller = new FollowController(makeAction('move'),
+      (left, right, signal) => this.robot.setWheelSpeeds!(left, right, 0, signal, 'follow'),
+      () => { if (this.selectedFollow === controller) void this.stopSelectedFollow(); },
+      () => { if (this.selectedFollow === controller) { this.onError(); void this.stop(); } });
+    this.selectedFollow = controller;
+    await controller.updateTracked(target, capturedAt, timeout, config);
+  }
+  async updateSelectedTarget(target: TrackedTarget | null, at: number, timeout: number, config: TrackedFollowSettings) {
+    if (!target?.active || target.targetLost || target.state === 'LOST') { await this.stopSelectedFollow(); return; }
+    await this.selectedFollow?.updateTracked(target, at, timeout, config);
+  }
+  async stopSelectedFollow() {
+    ++this.selectedStart;
+    const controller = this.selectedFollow;
+    this.selectedFollow = undefined;
+    controller?.cancel();
+    if (controller) {
+      try { await (this.robot.stopOutput ? this.robot.stopOutput('wheels') : this.robot.stop()); }
+      catch { this.onError(); await this.stop(); }
+    }
+  }
   private visionFrame?: { detections: VisionResult[]; width: number; height: number; capturedAt: number };
   private currentRules: Rule[] = [];
   private cancelFollow() { this.follow?.controller.cancel(); this.follow = undefined; }
@@ -29,6 +62,8 @@ export class ActionEngine {
     private onError: () => void = () => {},
   ) {}
   async stop() {
+    ++this.selectedStart;
+    this.selectedFollow?.cancel(); this.selectedFollow = undefined;
     ++this.frameRevision;
     this.cancelFollow();
     ++this.revision;
@@ -47,6 +82,12 @@ export class ActionEngine {
   }
   /** Feed every detection evaluation, including while a normal sequence is busy. */
   async updateRules(triggered: Rule[], active: Rule[], frame?: { detections: VisionResult[]; width: number; height: number }): Promise<boolean> {
+    ++this.selectedStart;
+    if (this.selectedFollow) {
+      const revision = this.revision;
+      await this.stopSelectedFollow();
+      if (revision !== this.revision) return false;
+    }
     const frameRevision = ++this.frameRevision;
     const capturedAt = performance.now();
     this.visionFrame = frame ? { ...frame, capturedAt } : undefined;
@@ -106,6 +147,12 @@ export class ActionEngine {
     return this.runSteps(steps);
   }
   async run(actions: Action[]): Promise<boolean> {
+    ++this.selectedStart;
+    if (this.selectedFollow) {
+      const revision = this.revision;
+      await this.stopSelectedFollow();
+      if (revision !== this.revision) return false;
+    }
     return this.runSteps(actions.map(action => ({ action })));
   }
   async reset(actions: Action[]): Promise<boolean> {

@@ -1,3 +1,5 @@
+import { ObjectSelection } from './components/ObjectSelection';
+import { orientDetections } from './core/CameraOrientation';
 import { withDetectionRegions, REGION_BOUNDARIES } from './core/DetectionRegions';
 import { detectionAreaRatio } from './core/DetectionDistance';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -91,6 +93,7 @@ export default function App() {
   const sensorRef = useRef<SensorState>({});
   const latestVision = useRef<{ items: VisionResult[]; updatedAt: number }>({ items: [], updatedAt: -Infinity });
   const [hardwareBusy, setHardwareBusy] = useState(false);
+  const [followContainer, setFollowContainer] = useState<HTMLDivElement | null>(null);
   const [finchStatus, setFinchStatus] = useState<FinchStatus>({
     connector: 'not-detected',
     connection: 'disconnected',
@@ -134,6 +137,7 @@ export default function App() {
   const modelWork = useRef<Promise<unknown>>(Promise.resolve());
   const [storage] = useState(() => new ProjectStorage());
   const cameraSource = project.cameraSource ?? 'local';
+  const mirrorHorizontal = project.mirrorHorizontal ?? false;
   const [cameraError, setCameraError] = useState(false);
   const cameraAttempt = useRef(0);
   const networkImage = useRef<HTMLImageElement>(null);
@@ -327,7 +331,9 @@ export default function App() {
         }
         if (version !== loopVersion.current) return;
         if (vision.capabilities.boundingBoxes) {
-        items = withDetectionRegions(items.filter(hasBoundingBox), demo ? 1280 : camera.width || 1280);
+          const frameWidth = demo ? 1280 : camera.width || 1280;
+          const displayed = orientDetections(items, frameWidth, !demo && (projectRef.current.mirrorHorizontal ?? false));
+          items = withDetectionRegions(displayed.filter(hasBoundingBox), frameWidth);
         items = items.filter(hasBoundingBox).map(d => ({ ...d, areaRatio: detectionAreaRatio(d,
           demo ? 1280 : camera.width || 1280,
           demo ? 720 : camera.height || 720) }));
@@ -354,7 +360,7 @@ export default function App() {
         setModelReady(false);
         setModelError(true);
         setNotice(
-          vision.capabilities.boundingBoxes ? 'Detection paused. Use a static YOLOv8 COCO ONNX model (640 × 640, without NMS), then load it again.' : "Image classification paused. Reload your Teachable Machine model and try again.",
+          vision.capabilities.boundingBoxes ? 'Detection paused. Use a static YOLO11 COCO ONNX model (640 × 640, without NMS), then load it again.' : "Image classification paused. Reload your Teachable Machine model and try again.",
         );
         return;
       }
@@ -368,7 +374,7 @@ export default function App() {
       ++loopVersion.current;
       clearTimeout(timer);
     };
-  }, [demo, demoVisible, cameraOn, modelReady, consume, vision, pause, log]);
+  }, [demo, demoVisible, cameraOn, modelReady, consume, vision, pause, log, mirrorHorizontal]);
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
@@ -488,7 +494,7 @@ export default function App() {
       await inference.current?.catch(() => {});
       if (version !== modelVersion.current) return;
       const model = kind === 'teachable-machine' ? normalizeTeachableMachineUrl(tmUrlInput) :
-        file ? new Uint8Array(await file.arrayBuffer()) : './models/yolov8n.onnx';
+        file ? new Uint8Array(await file.arrayBuffer()) : './models/yolo11n.onnx';
       await vision.select(kind);
       const result = await vision.load(model);
       if (version !== modelVersion.current) return;
@@ -508,13 +514,13 @@ export default function App() {
     modelWork.current = work;
     try {
       await work;
-    } catch {
+    } catch (error) {
       if (version !== modelVersion.current) return;
       setModelError(true);
       setBackend('Not loaded');
       setNotice(
         kind === 'teachable-machine' ? "We couldn't load this Teachable Machine model. Check the model link and try again." :
-          'Model could not load. Choose a YOLOv8 COCO .onnx file exported at 640 × 640 without NMS. Open the guide for instructions.',
+          'YOLO11n could not load. Use an FP32 COCO detection ONNX model, 640 × 640, without NMS. ' + String(error),
       );
     } finally {
       if (version === modelVersion.current) setModelBusy(false);
@@ -834,6 +840,10 @@ export default function App() {
                   <option value="network">Network Camera</option>
                 </select>
               </label>
+              <label>Mirror horizontally
+                <input type="checkbox" role="switch" aria-label="Mirror horizontally" checked={mirrorHorizontal}
+                  onChange={e => { ++loopVersion.current; pause(); consume([]); edit({ ...project, mirrorHorizontal: e.target.checked }); }} />
+              </label>
               {cameraSource === 'network' && <>
                 <label>Stream URL<input aria-label="Stream URL" type="url" value={project.networkCameraUrl ?? 'http://10.0.5.11/stream'}
                   onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }} /></label>
@@ -842,8 +852,8 @@ export default function App() {
               </>}
             </div>
             <div className="camera-stage">
-              <video ref={video} muted playsInline className={cameraSource === 'local' && cameraOn && !demo ? '' : 'hidden'} />
-              <img ref={networkImage} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn && !demo ? '' : 'hidden'} />
+              <video ref={video} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} muted playsInline className={cameraSource === 'local' && cameraOn && !demo ? '' : 'hidden'} />
+              <img ref={networkImage} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn && !demo ? '' : 'hidden'} />
               {!cameraOn && !demo && (
                 <div className="camera-empty">
                   <div className="viewfinder">
@@ -890,6 +900,9 @@ export default function App() {
                 </div>
               )}
               <canvas ref={canvas} />
+              <ObjectSelection key={[project.id, cameraSource, cameraOn, demo, mirrorHorizontal].join('-')} camera={camera} available={cameraOn && !demo} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.updatedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
+                follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
+                  prepare: () => { aiRef.current = false; setAi(false); rules.reset(); } } : undefined} />
               {(demo || cameraOn) && (
                 <div className="feed-top">
                   <span>
@@ -916,6 +929,7 @@ export default function App() {
                 Frames are processed in this browser. No video is uploaded.
               </div>
             </div>
+            <div ref={setFollowContainer} />
             <div className="preview-toolbar">
               <span>
                 <ScanLine size={16} />
@@ -1004,7 +1018,7 @@ export default function App() {
               <div className="model-body">
                 <label>AI model
                   <select aria-label="AI model" value={providerKind} onChange={e => changeProvider(e.target.value as VisionProviderKind)}>
-                    <option value="yolo">YOLOv8n — Object Detection</option>
+                    <option value="yolo">YOLO11n — Object Detection</option>
                     <option value="teachable-machine">Teachable Machine — Image Classification</option>
                   </select>
                 </label>
@@ -1013,7 +1027,7 @@ export default function App() {
                     <ScanLine size={20} />
                   </span>
                   <div>
-                    <strong>{providerKind === 'yolo' ? 'YOLOv8n' : 'Teachable Machine'}</strong>
+                    <strong>{providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'}</strong>
                     <span>{visionCapabilities.boundingBoxes ? 'Object detection' : 'Image Classification'} · {availableClasses.length} classes</span>
                   </div>
                   <span className={`model-indicator ${modelReady ? 'ready' : ''}`} />
@@ -1298,8 +1312,8 @@ export default function App() {
                     <b>Connect a camera.</b> Allow browser access, or choose “Try the demo.”
                   </li>
                   <li>
-                    <b>Load the model.</b> Choose a YOLOv8 COCO ONNX file: static 640 × 640, no NMS.
-                    Teachers can place it at <code>public/models/yolov8n.onnx</code> for the Load
+                    <b>Load the model.</b> Choose a YOLO11 COCO ONNX file: static 640 × 640, no NMS.
+                    Teachers can place it at <code>public/models/yolo11n.onnx</code> for the Load
                     button.
                   </li>
                   <li>

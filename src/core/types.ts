@@ -75,6 +75,7 @@ export interface VisionSettings {
 }
 export interface Project {
   cameraSource?: 'local' | 'network';
+  mirrorHorizontal?: boolean;
   networkCameraUrl?: string;
   sensorConfiguration?: SensorDescriptor[];
   visionProvider: VisionProviderKind;
@@ -134,13 +135,14 @@ export const makeRule = (): Rule => ({
 });
 export const makeProject = (): Project => ({
   cameraSource: 'local',
+  mirrorHorizontal: false,
   sensorConfiguration: [],
   visionProvider: 'yolo',
   version: 1,
   id: crypto.randomUUID(),
   name: 'My first vision project',
   robotType: 'finch',
-  vision: { confidence: 0.7, fps: 8, visualize: true, model: 'YOLOv8n · COCO' },
+  vision: { confidence: 0.7, fps: 8, visualize: true, model: 'YOLO11n · COCO' },
   rules: [makeRule()],
   selectedClasses: ['person'],
 });

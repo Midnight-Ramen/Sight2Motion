@@ -2,4 +2,6 @@ node_modules/
 dist/
 test-results/
 public/models/*.onnx
-!public/models/yolov8n.onnx
+!public/models/yolo11n.onnx
+
+!public/models/mobilesam/*.onnx
