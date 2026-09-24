@@ -4,6 +4,7 @@ import wasmModuleUrl from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url';
 import gpuWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import gpuModuleUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import { summarizeMask } from './SegmentationGeometry';
+import { promptInputs } from './SAMPrompts';
 let encoder: ort.InferenceSession | undefined, decoder: ort.InferenceSession | undefined;
 let embedding: ort.Tensor | undefined;
 let width = 0, height = 0, resizedWidth = 0, resizedHeight = 0;
@@ -78,10 +79,11 @@ self.onmessage = async ({ data }) => {
     } else if (data.kind === 'decode') {
       if (!embedding) throw new Error('Capture a frame first.');
       const started = performance.now();
+      const prompt = promptInputs(data.prompts, resizedWidth / width, resizedHeight / height);
       const feeds: Record<string, ort.Tensor> = {
         image_embeddings: embedding,
-        point_coords: new ort.Tensor('float32', new Float32Array([data.x * resizedWidth / width, data.y * resizedHeight / height, 0, 0]), [1, 2, 2]),
-        point_labels: new ort.Tensor('float32', new Float32Array([1, -1]), [1, 2]),
+        point_coords: new ort.Tensor('float32', prompt.coords, [1, prompt.count, 2]),
+        point_labels: new ort.Tensor('float32', prompt.labels, [1, prompt.count]),
         mask_input: new ort.Tensor('float32', new Float32Array(256 * 256), [1, 1, 256, 256]),
         has_mask_input: new ort.Tensor('float32', new Float32Array([0]), [1]),
         orig_im_size: new ort.Tensor('float32', new Float32Array([height, width]), [2]),

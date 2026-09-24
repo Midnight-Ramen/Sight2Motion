@@ -1,4 +1,5 @@
 import type { SelectedSegment } from './SegmentationGeometry';
+import type { SAMPrompts } from './SAMPrompts';
 export class MobileSAMSegmenter {
   selected: SelectedSegment | null = null;
   private worker?: Worker;
@@ -33,10 +34,14 @@ export class MobileSAMSegmenter {
     finally { bitmap.close(); }
   }
   async select(x: number, y: number) {
-    const selected: SelectedSegment = await this.request('decode', { x, y });
+    return this.refine({ points: [{ x, y, label: 1 }] });
+  }
+  async refine(prompts: SAMPrompts) {
+    const selected: SelectedSegment = await this.request('decode', { prompts });
     this.selected = selected;
     return selected;
   }
+  clearSelection() { this.selected = null; }
   async clear() { this.selected = null; if (this.loaded) await this.request('clear'); }
   dispose(message = 'Selection cancelled.') {
     this.worker?.terminate(); this.worker = undefined; this.loaded = false; this.selected = null;

@@ -1,5 +1,7 @@
 import { displayedX } from './CameraOrientation';
 export interface SelectedSegment {
+  displayName?: string;
+  detectorLabel?: string | null;
   /** Source-frame pixel coordinates; never feeds robot rules. */
   mask: Uint8Array;
   width: number; height: number;

@@ -1797,6 +1797,9 @@ html {
 .selection-controls span, .selection-controls small { background: #fff; color: #17392c; padding: 4px 8px; border-radius: 6px; font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
 
 .camera-stage canvas.tracking-overlay { z-index: 3; pointer-events: none; }
+.selection-controls.selection-editor { position: static; padding: 12px; font-size: 12px; }
+.selection-editor label { display: flex; flex-direction: column; gap: 4px; }
+.selection-editor input { max-width: 180px; }
 .tracked-follow-controls { padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
 .tracked-follow-controls > small, .tracked-follow-controls > details { flex-basis: 100%; }
 .tracked-follow-controls fieldset { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; border: 0; padding: 0; }

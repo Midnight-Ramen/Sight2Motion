@@ -1,4 +1,6 @@
 import { displayedX } from './CameraOrientation';
+import { associateSelection } from './SAMAssociation';
+import { CLASSES } from './VisionEngine';
 import type { SelectedSegment } from './SegmentationGeometry';
 import { hasBoundingBox, type Detection, type VisionResult } from './types';
 
@@ -6,6 +8,9 @@ type Box = SelectedSegment['boundingBox'];
 export type TrackingState = 'IDLE' | 'SAM_SELECTED' | 'MATCHING' | 'TRACKING' | 'TEMPORARILY_LOST' | 'LOST';
 export interface SelectedTarget extends SelectedSegment { selectedAt: number; initialBoundingBox: Box }
 export interface TrackedTarget {
+  displayName?: string;
+  detectorLabel?: string;
+  detectorClassId?: number | null;
   active: boolean; state: TrackingState; label: string;
   centerX: number; centerY: number; boundingBox: Box;
   relativeX: number; relativeY: number; normalizedWidth: number; normalizedHeight: number;
@@ -41,12 +46,12 @@ export class TargetTracker {
     const box={...b,x:displayedX(b.x,segment.width,mirror,b.width)};
     this.selected={...segment, initialBoundingBox:box, selectedAt:now};
     this.state='MATCHING';
-    const candidates=detections.filter(hasBoundingBox).filter(valid)
-      .map(d=>({d,overlap:boxIou(box,d)})).sort((a,b)=>b.overlap-a.overlap);
-    const best=candidates[0];
-    if(!best || best.overlap<this.config.initialIou) { this.state='SAM_SELECTED'; return null; }
+    const match=associateSelection(segment,detections,mirror,this.config.initialIou);
+    if(!match) { this.state='SAM_SELECTED'; return null; }
+    const best={d:match.detection,overlap:match.iou};
+    this.selected.detectorLabel=best.d.className;
     this.lastSeen=this.lastUpdate=now; this.raw={x:best.d.x,y:best.d.y,width:best.d.width,height:best.d.height};
-    this.target=this.makeTarget(this.raw,best.d.className,best.d.confidence,best.overlap,0,'TRACKING');
+    this.target=this.makeTarget(this.raw,best.d.className,best.d.confidence,match.score,0,'TRACKING');
     this.state='TRACKING';
     console.info('SAM target locked', {label:best.d.className,initialIou:best.overlap});
     return this.target;
@@ -54,7 +59,8 @@ export class TargetTracker {
   private makeTarget(boundingBox: Box,label:string,confidence:number,trackingConfidence:number,lostFrames:number,state:TrackingState):TrackedTarget {
     const p=center(boundingBox), normalizedWidth=boundingBox.width/this.width, normalizedHeight=boundingBox.height/this.height;
     const normalizedArea=normalizedWidth*normalizedHeight;
-    return {active:true,state,label,boundingBox,centerX:p.x,centerY:p.y,relativeX:p.x/this.width,relativeY:p.y/this.height,
+    return {active:true,state,label,displayName:this.selected?.displayName?.trim() || 'Selected object',detectorLabel:label,
+      detectorClassId:CLASSES.includes(label)?CLASSES.indexOf(label):null,boundingBox,centerX:p.x,centerY:p.y,relativeX:p.x/this.width,relativeY:p.y/this.height,
       normalizedWidth,normalizedHeight,normalizedArea,size:normalizedArea,errorX:p.x-this.width/2,
       horizontalError:(p.x-this.width/2)/(this.width/2),confidence,trackingConfidence,lostFrames,targetLost:state==='LOST'};
   }

@@ -901,7 +901,7 @@ export default function App() {
               )}
               <canvas ref={canvas} />
               <ObjectSelection key={[project.id, cameraSource, cameraOn, demo, mirrorHorizontal].join('-')} camera={camera} available={cameraOn && !demo} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.updatedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
-                follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
+                controlsContainer={followContainer} follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
                   prepare: () => { aiRef.current = false; setAi(false); rules.reset(); } } : undefined} />
               {(demo || cameraOn) && (
                 <div className="feed-top">
