@@ -46,6 +46,7 @@ export class NetworkCameraSource {
   private objectUrl?: string;
   private lastFrame = 0;
   private stopped = false;
+  frameVersion = 0;
   width = 0;
   height = 0;
   constructor(private image: HTMLImageElement) {}
@@ -96,6 +97,7 @@ export class NetworkCameraSource {
             if (signal.aborted) break;
             if (!this.image.naturalWidth || !this.image.naturalHeight) throw new Error('Empty camera image.');
             this.lastFrame = Date.now();
+            this.frameVersion++;
             this.width = this.image.naturalWidth;
             this.height = this.image.naturalHeight;
             this.ready = true;

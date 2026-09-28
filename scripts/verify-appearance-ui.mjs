@@ -1,0 +1,43 @@
+import { chromium, expect } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--autoplay-policy=no-user-gesture-required']});
+const page=await browser.newPage({viewport:{width:1440,height:1050}});
+const logs=[]; page.on('console',m=>{if(m.text().includes('MobileSAM')){logs.push(m.text());console.log(m.text());}});
+await page.route('**/sam-fixture.jpg',r=>r.fulfill({path:'test-results/coco128/images/train2017/000000000036.jpg',contentType:'image/jpeg'}));
+await page.addInitScript(()=>{
+ Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{
+  const img=new Image();img.src='/sam-fixture.jpg';await img.decode();
+  const c=document.createElement('canvas');c.width=img.width;c.height=img.height;c.getContext('2d').drawImage(img,0,0);
+  setInterval(()=>c.getContext('2d').drawImage(img,0,0),125);return c.captureStream(8);
+ }});
+});
+try {
+ await page.goto(process.env.STUDIO_URL||'http://127.0.0.1:5174');
+ const requests=[];page.on('request',r=>{if(r.url().includes('/mobilesam/')) requests.push(r.url());});
+ await page.getByRole('button',{name:'Connect camera',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Select Object',exact:true})).toBeEnabled({timeout:20000});
+ expect(requests).toHaveLength(0);
+ await page.getByRole('switch',{name:'Mirror horizontally'}).check();
+ await page.getByRole('button',{name:'Select Object',exact:true}).click();
+ await expect(page.getByText('Click an object · frozen frame',{exact:true})).toBeVisible({timeout:180000});
+ const c=page.locator('canvas.selection-frame');const rect=await c.boundingBox();
+ const scale=Math.min(rect.width/481,rect.height/640),off=(rect.width-481*scale)/2;
+ await page.mouse.click(rect.x+off+(481-320)*scale,rect.y+400*scale);
+ await expect(page.getByLabel('Target name',{exact:true})).toBeVisible({timeout:180000});
+ await page.getByLabel('Target name',{exact:true}).fill('Jonathan');
+ await page.getByRole('button',{name:'Add object & track',exact:true}).click();
+ await expect(c).toHaveCount(0);
+ await expect(page.getByText(/Tracking: Jonathan/)).toBeVisible();
+ await expect(page.getByRole('region',{name:'Custom selected objects'})).toContainText('Jonathan - TRACKING');
+ await expect(page.locator('.detection-chip').filter({hasText:'Jonathan'})).toContainText('Tracked selection');
+ await page.waitForTimeout(1500);
+ await expect(page.getByRole('region',{name:'Custom selected objects'})).toContainText('TRACKING');
+ await expect(page.getByRole('button',{name:'Follow selected target',exact:true})).toBeDisabled();
+ await page.screenshot({path:'test-results/appearance-tracking.png'});
+ await page.getByRole('button',{name:'Stop Tracking',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Custom selected objects'})).toContainText('Select to track');
+ expect(requests.filter(x=>x.endsWith('encoder.onnx'))).toHaveLength(1);
+ expect(requests.filter(x=>x.endsWith('decoder.onnx'))).toHaveLength(1);
+ console.log('Named appearance tracking without YOLO, live frame updates, mirror and stop passed.');
+ await writeFile('test-results/appearance-ui.json',JSON.stringify({logs,requests},null,2));
+}finally{await browser.close();}

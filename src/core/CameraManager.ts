@@ -8,6 +8,7 @@ export class LocalCameraSource {
   get frame(): CameraFrame | null {
     return this.stream && this.video && this.video.readyState >= 2 && this.video.videoWidth > 0 ? this.video : null;
   }
+  get frameVersion() { return this.video?.getVideoPlaybackQuality().totalVideoFrames ?? 0; }
   async connect(video: HTMLVideoElement, deviceId?: string) {
     this.stop();
     const generation = this.generation;
@@ -58,6 +59,7 @@ export class CameraManager {
   private network?: NetworkCameraSource;
   private generation = 0;
   get frame(): CameraFrame | null { return this.network ? this.network.frame : this.local.frame; }
+  get frameVersion() { return this.network ? this.network.frameVersion : this.local.frameVersion; }
   get width() { const f = this.frame; return this.network?.width ?? (f ? ('videoWidth' in f ? f.videoWidth : 'naturalWidth' in f ? f.naturalWidth : f.width) : 0); }
   get height() { const f = this.frame; return this.network?.height ?? (f ? ('videoHeight' in f ? f.videoHeight : 'naturalHeight' in f ? f.naturalHeight : f.height) : 0); }
   connect(video: HTMLVideoElement, deviceId?: string) {

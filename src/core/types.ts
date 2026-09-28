@@ -74,6 +74,7 @@ export interface VisionSettings {
   model: string;
 }
 export interface Project {
+  customObjects?: string[];
   cameraSource?: 'local' | 'network';
   mirrorHorizontal?: boolean;
   networkCameraUrl?: string;
@@ -145,6 +146,7 @@ export const makeProject = (): Project => ({
   vision: { confidence: 0.7, fps: 8, visualize: true, model: 'YOLO11n · COCO' },
   rules: [makeRule()],
   selectedClasses: ['person'],
+  customObjects: [],
 });
 
 

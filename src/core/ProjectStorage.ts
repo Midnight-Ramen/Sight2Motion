@@ -103,6 +103,9 @@ export function parseProject(text: string): Project {
   if (p.selectedClasses !== undefined && (!Array.isArray(p.selectedClasses) ||
     p.selectedClasses.length > 80 || p.selectedClasses.some(c => typeof c !== 'string' || !c.trim() || c.length > 100)))
     throw new Error('Project objects are not valid.');
+  if (p.customObjects !== undefined && (!Array.isArray(p.customObjects) || p.customObjects.length > 10 ||
+    p.customObjects.some(n => typeof n !== 'string' || !n.trim() || n.length > 80)))
+    throw new Error('Custom object names are not valid.');
   const valid = p as unknown as Project;
   const teachableMachineUrl = valid.teachableMachineUrl ? normalizeTeachableMachineUrl(valid.teachableMachineUrl) : undefined;
   // Preserve every referenced class, including legacy projects with more than ten objects.
@@ -117,6 +120,7 @@ export function parseProject(text: string): Project {
     visionProvider: valid.visionProvider ?? 'yolo',
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
+    customObjects: [...new Set((valid.customObjects ?? []).map(n => n.trim()))],
     sensorConfiguration: configuration.map(s => sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
     id: valid.id,
     name: valid.name,

@@ -1,3 +1,4 @@
+import type { TrackedTarget } from './core/TargetTracker';
 import { ObjectSelection } from './components/ObjectSelection';
 import { orientDetections } from './core/CameraOrientation';
 import { withDetectionRegions, REGION_BOUNDARIES } from './core/DetectionRegions';
@@ -196,6 +197,8 @@ export default function App() {
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, [modalOpen]);
+  const [customTracked, setCustomTracked] = useState<TrackedTarget | null>(null);
+  const appearanceVisible = customTracked?.detectorLabel === 'appearance' && customTracked.state === 'TRACKING';
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
     setNotice('Changes ready. Press Play rules to run your updated actions.');
@@ -570,7 +573,7 @@ export default function App() {
       );
     } finally {
       if (updateProject) {
-        setProject(current => ({ ...current, robotType: mode, rules: [], sensorConfiguration: [] }));
+        setProject(current => ({ ...current, robotType: mode, rules: [], sensorConfiguration: [], customObjects: [] }));
         setDirty(true);
         setLastRule('');
         setNotice('Robot changed. Rules and sensor conditions cleared.');
@@ -623,7 +626,7 @@ export default function App() {
     setHardwareBusy(true);
     try {
       const ok = connected ? await actions.reset(resetActions(robotMode, project.rules)) : (await actions.stop(), true);
-      setProject(current => ({ ...current, rules: [], sensorConfiguration: [] }));
+      setProject(current => ({ ...current, rules: [], sensorConfiguration: [], customObjects: [] }));
       setDirty(true);
       setLastRule('');
       setNotice(ok ? 'Project reset. Rules and sensor conditions cleared.' : 'Rules cleared. Robot output reset could not be confirmed.');
@@ -901,7 +904,9 @@ export default function App() {
               )}
               <canvas ref={canvas} />
               <ObjectSelection key={[project.id, cameraSource, cameraOn, demo, mirrorHorizontal].join('-')} camera={camera} available={cameraOn && !demo} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.updatedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
-                controlsContainer={followContainer} follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
+                controlsContainer={followContainer}
+                savedNames={project.customObjects} onTracking={setCustomTracked}
+                onSaveName={name => { setProject(current => ({ ...current, customObjects: [...new Set([...(current.customObjects ?? []), name])].slice(0, 10) })); setDirty(true); }} follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
                   prepare: () => { aiRef.current = false; setAi(false); rules.reset(); } } : undefined} />
               {(demo || cameraOn) && (
                 <div className="feed-top">
@@ -935,6 +940,7 @@ export default function App() {
                 <ScanLine size={16} />
                 <b>{detections.length}</b> {visionCapabilities.boundingBoxes ? 'objects detected' : 'class predictions'}
               </span>
+              {appearanceVisible && <span>1 selected target tracked</span>}
               <span className="fps">{measuredFps.toFixed(0)} FPS</span>
               {visionCapabilities.boundingBoxes && <label className="visualization-toggle">
                 <input
@@ -949,6 +955,7 @@ export default function App() {
               </label>}
             </div>
             <div className="detection-strip">
+              {appearanceVisible && <span className="detection-chip"><span />{customTracked.displayName}<b>Tracked selection</b></span>}
               {detections.length ? (
                 detections.map((d, i) => (
                   <span
@@ -961,7 +968,7 @@ export default function App() {
                     <b>{Math.round(d.confidence * 100)}%</b>
                   </span>
                 ))
-              ) : (
+              ) : !appearanceVisible && (
                 <span className="muted">{visionCapabilities.boundingBoxes ? 'Detected objects' : 'Class predictions'} will appear here</span>
               )}
               {demo && (
@@ -1125,6 +1132,12 @@ export default function App() {
                 </div>
               </div>
             </section>
+            {!!project.customObjects?.length && <section className="project-objects" aria-label="Custom selected objects">
+              <h3>My selected objects</h3>
+              <div className="project-object-chips">{project.customObjects.map(name => <span className="project-object-chip" key={name}>{name} - {customTracked?.detectorLabel === 'appearance' && customTracked.displayName === name ? customTracked.state : 'Select to track'}
+                <button aria-label={`Remove selected object ${name}`} onClick={() => edit({ ...project, customObjects: project.customObjects?.filter(n => n !== name) })}>×</button></span>)}</div>
+              <p>Select an object in the camera and reuse its name to track it. One active target at a time. Names are saved; visual selections must be made again after loading. Use Follow selected target to follow these objects.</p>
+            </section>}
             <ProjectObjects key={`${project.id}:${providerKind}`} selected={project.selectedClasses} supported={availableClasses}
               capabilities={visionCapabilities}
               rules={project.rules} detections={detections} threshold={project.vision.confidence}

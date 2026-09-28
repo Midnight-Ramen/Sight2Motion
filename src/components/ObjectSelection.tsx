@@ -1,3 +1,4 @@
+import { AppearanceTracker } from '../core/AppearanceTracker';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CameraManager } from '../core/CameraManager';
@@ -9,7 +10,9 @@ import { TrackedFollowControls, type TrackedFollowAccess } from './TrackedFollow
 import type { SAMPrompts } from '../core/SAMPrompts';
 import { associateSelection } from '../core/SAMAssociation';
 
-export function ObjectSelection({ camera, available, mirror, detections, visionUpdatedAt, trackingEnabled, follow, controlsContainer }: {
+export function ObjectSelection({ camera, available, mirror, detections, visionUpdatedAt, trackingEnabled, follow, controlsContainer, savedNames = [], onSaveName, onTracking }: {
+  onTracking?: (target: TrackedTarget | null) => void;
+  savedNames?: string[]; onSaveName?: (name: string) => void;
   camera: CameraManager; available: boolean; mirror: boolean; detections: VisionResult[];
   visionUpdatedAt: number; trackingEnabled: boolean;
   follow?: TrackedFollowAccess;
@@ -30,13 +33,32 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   const latest = useRef({ items: detections, at: visionUpdatedAt });
   latest.current = { items: detections, at: visionUpdatedAt };
   const [association, setAssociation] = useState<{ label: string; items: VisionResult[]; at: number } | null>(null);
+  const [appearance] = useState(() => new AppearanceTracker());
+  const appearanceActive = useRef(false);
+  const sampleCanvas = useRef<HTMLCanvasElement | null>(null);
+  const lastVersion = useRef(-1);
+  function pixels(frame: CanvasImageSource, width: number, height: number) {
+    const c = sampleCanvas.current ??= document.createElement('canvas');
+    c.width = 160; c.height = Math.round(height * 160 / width);
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(frame, 0, 0, c.width, c.height);
+    return ctx.getImageData(0, 0, c.width, c.height);
+  }
   const [tracker] = useState(() => new TargetTracker());
   const [target, setTarget] = useState<TrackedTarget | null>(null);
+  useEffect(() => { onTracking?.(target); }, [target, onTracking]);
+  useEffect(() => () => { onTracking?.(null); }, [onTracking]);
+  useEffect(() => {
+    if (appearanceActive.current && target && !savedNames.includes(target.displayName ?? '')) {
+      appearanceActive.current = false; appearance.stop(); setTarget(null);
+    }
+  }, [savedNames, target, appearance]);
   const trackedAt = useRef(-Infinity);
   const trackingCanvas = useRef<HTMLCanvasElement>(null);
   const capturedDetections = useRef<{ items: VisionResult[]; at: number;
     history: { items: VisionResult[]; at: number }[]; expired: boolean } | null>(null);
   useEffect(() => {
+    if (appearanceActive.current) return;
     if (!trackingEnabled) { tracker.stop(); setTarget(null); return; }
     const captured = capturedDetections.current;
     if (captured && visionUpdatedAt > captured.at && captured.history.at(-1)?.at !== visionUpdatedAt) {
@@ -50,9 +72,19 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     setTarget(next);
   }, [detections, visionUpdatedAt, trackingEnabled, tracker]);
   useEffect(() => {
-    const timer = setInterval(() => setTarget(tracker.age()), 100);
+    const timer = setInterval(() => {
+      if (!appearanceActive.current) { setTarget(tracker.age()); return; }
+      try {
+        const frame = camera.frame, version = camera.frameVersion;
+        if (available && frame && version !== lastVersion.current) {
+          lastVersion.current = version;
+          setTarget(appearance.update(pixels(frame, camera.width, camera.height), performance.now(), camera.width, camera.height));
+          trackedAt.current = appearance.capturedAt;
+        } else setTarget(appearance.age());
+      } catch { appearance.stop(); appearanceActive.current = false; setTarget(null); setStatus('Tracking stopped. Capture a fresh frame.'); }
+    }, 100);
     return () => clearInterval(timer);
-  }, [tracker]);
+  }, [tracker, appearance, camera, available]);
   useEffect(() => {
     const c = trackingCanvas.current;
     if (!c || !target) return;
@@ -105,7 +137,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
         setStatus(`Target matched · YOLO class: ${match.detection.className} · Live tracking available`); return; }
     }
     setAssociation(null); setSelected({...segment,detectorLabel:null});
-    setStatus('Object selected. No matching YOLO detection is currently available. You can refine the selection or capture another frame.');
+    setStatus('Object selected. Add it for appearance tracking without a YOLO class match. Keep the object still until tracking locks.');
   }
   function clearSelection() {
     history.current=[]; setPrompts({points:[]}); setSelected(null); setDisplayName(''); setAssociation(null);
@@ -115,6 +147,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     if (locked.current || !camera.frame) return;
     locked.current = true; setBusy(true); setSelected(null);
     setDisplayName(''); setPrompts({points:[]}); history.current=[]; setAssociation(null);
+    appearanceActive.current = false; appearance.stop();
     tracker.stop(); setTarget(null);
     capturedDetections.current = { items: trackingEnabled && performance.now() - visionUpdatedAt < 2500 ? detections : [],
       at: visionUpdatedAt, history: [], expired: false };
@@ -173,6 +206,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     const wasBusy = locked.current;
     locked.current = true; setBusy(true); setActive(false); setStatus(''); setSelected(null);
     setDisplayName(''); setPrompts({points:[]}); history.current=[]; setAssociation(null);
+    appearanceActive.current = false; appearance.stop();
     tracker.stop(); setTarget(null); capturedDetections.current = null;
     if (wasBusy) service.current?.dispose(); else await service.current?.clear().catch(() => {});
     if (version !== generation.current) return;
@@ -200,6 +234,22 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     await service.current?.clear().catch(() => {});
     if (version === generation.current) { locked.current = false; setBusy(false); }
   }
+  async function addAppearanceTarget() {
+    if (!selected || !snapshot.current || busy || !camera.frame) return;
+    try {
+      const name = displayName.trim() || 'Selected object';
+      tracker.stop();
+      appearance.initialize(pixels(snapshot.current, snapshot.current.width, snapshot.current.height), { ...selected, displayName: name }, mirror);
+      const next = appearance.update(pixels(camera.frame, camera.width, camera.height), performance.now(), camera.width, camera.height);
+      if (!next) { appearance.stop(); setStatus('Could not locate this appearance in the live frame. Keep the object still and capture again.'); return; }
+      onSaveName?.(name);
+      appearanceActive.current = true; lastVersion.current = camera.frameVersion;
+      trackedAt.current = appearance.capturedAt; setTarget(next); setActive(false);
+      capturedDetections.current = null;
+      setStatus('Appearance tracking  -  one active object  -  Follow must be started separately.');
+      await service.current?.clear().catch(() => {});
+    } catch (e) { appearance.stop(); appearanceActive.current = false; setTarget(null); setStatus(String(e)); }
+  }
   const controls = <div className={`selection-controls${active && controlsContainer ? ' selection-editor' : ''}`}>
       <button disabled={!available || busy} onClick={() => void capture()}>{active ? 'Capture new frame' : 'Select Object'}</button>
       {active && <button onClick={close}>Back to live</button>}
@@ -211,8 +261,10 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
         <button disabled={busy} onClick={clearSelection}>Clear selection</button>
       </>}
       {active && selected && <>
-        <label>Target name <input maxLength={80} value={displayName} disabled={busy} placeholder="Selected object"
+        <label>Target name <input list="saved-target-names" maxLength={80} value={displayName} disabled={busy} placeholder="Selected object"
           onChange={e=>{setDisplayName(e.target.value);setSelected({...selected,displayName:e.target.value.trim()||'Selected object'});}} /></label>
+        <datalist id="saved-target-names">{savedNames.map(name=><option key={name} value={name}/>)}</datalist>
+        <button disabled={busy || !available || (!savedNames.includes(displayName.trim() || 'Selected object') && savedNames.length >= 10)} onClick={()=>void addAppearanceTarget()}>Add object & track</button>
         <button disabled={busy} onClick={()=>retryMatch()}>Retry tracking match</button>
         <button disabled={busy || !association} onClick={lockTarget}>Lock target</button>
         <small>Name: {displayName.trim()||'Selected object'} · Positive points: {prompts.points.filter(p=>p.label===1).length} · Negative points: {prompts.points.filter(p=>p.label===0).length} · YOLO match: {association?.label??'none'}</small>
@@ -236,6 +288,6 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
         else draw(selected??undefined);}} />}
     {active && controlsContainer ? createPortal(controls, controlsContainer) : controls}
     {follow && <TrackedFollowControls target={active ? null : target} capturedAt={trackedAt.current} timeout={tracker.lossTimeoutMs}
-      access={{ ...follow, available: follow.available && available && trackingEnabled && !active }} />}
+      access={{ ...follow, available: follow.available && available && (appearanceActive.current || trackingEnabled) && !active }} />}
   </>;
 }
