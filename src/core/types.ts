@@ -141,7 +141,7 @@ export const makeProject = (): Project => ({
   visionProvider: 'yolo',
   version: 1,
   id: crypto.randomUUID(),
-  name: 'My first vision project',
+  name: 'Name Your Project',
   robotType: 'finch',
   vision: { confidence: 0.7, fps: 8, visualize: true, model: 'YOLO11n · COCO' },
   rules: [makeRule()],

@@ -244,6 +244,7 @@ main {
   width: 365px;
   background: transparent;
   border: 0;
+  border-bottom: 1px dashed #929b8e;
   font:
     750 26px Manrope,
     sans-serif;

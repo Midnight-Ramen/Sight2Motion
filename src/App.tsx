@@ -65,6 +65,11 @@ import { HardwareTest } from './components/HardwareTest';
 import { SensorInputs } from './components/SensorInputs';
 import type { SensorState } from './core/Sensors';
 import './styles.css';
+const networkCameras = [1, 2, 3, 4].map(number => ({
+  name: `Camera ${number}`,
+  url: `http://robosight-cam-${String(number).padStart(2, '0')}.local/stream`,
+}));
+const defaultNetworkCameraUrl = networkCameras[0].url;
 const demoDetection: Detection = {
   className: 'person',
   confidence: 0.94,
@@ -425,7 +430,7 @@ export default function App() {
     };
     try {
       if (source === 'network') {
-        await camera.connectNetwork(networkImage.current!, project.networkCameraUrl || 'http://10.0.5.11/stream', ended);
+        await camera.connectNetwork(networkImage.current!, project.networkCameraUrl ?? defaultNetworkCameraUrl, ended);
       } else {
         const list = await camera.connect(video.current!, device);
         if (attempt !== cameraAttempt.current) return;
@@ -454,7 +459,7 @@ export default function App() {
   function switchCamera(source: 'local' | 'network') {
     disconnectCamera();
     edit({ ...project, cameraSource: source,
-      ...(source === 'network' ? { networkCameraUrl: project.networkCameraUrl || 'http://10.0.5.11/stream' } : {}) });
+      ...(source === 'network' ? { networkCameraUrl: project.networkCameraUrl ?? defaultNetworkCameraUrl } : {}) });
     void connectCamera(source);
   }
   function resetModel(kind: VisionProviderKind) {
@@ -728,13 +733,16 @@ export default function App() {
             <div className="title-line">
               <input
                 aria-label="Project name"
+                aria-describedby="project-name-help"
+                placeholder="Name Your Project"
+                onFocus={e => e.currentTarget.select()}
                 maxLength={100}
                 value={project.name}
                 onChange={(e) => edit({ ...project, name: e.target.value })}
               />
               <span className="save-status">{dirty ? 'Unsaved changes' : 'Local project'}</span>
             </div>
-            <p>Teach your robot to see. Give it something to do.</p>
+            <p id="project-name-help">Click or tap the name above to name your project.</p>
           </div>
           <div className="project-buttons">
             <button
@@ -848,7 +856,14 @@ export default function App() {
                   onChange={e => { ++loopVersion.current; pause(); consume([]); edit({ ...project, mirrorHorizontal: e.target.checked }); }} />
               </label>
               {cameraSource === 'network' && <>
-                <label>Stream URL<input aria-label="Stream URL" type="url" value={project.networkCameraUrl ?? 'http://10.0.5.11/stream'}
+                <label>Network camera
+                  <select aria-label="Network camera" value={networkCameras.some(camera => camera.url === (project.networkCameraUrl ?? defaultNetworkCameraUrl)) ? (project.networkCameraUrl ?? defaultNetworkCameraUrl) : ''}
+                    onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }}>
+                    {networkCameras.map(camera => <option key={camera.url} value={camera.url}>{camera.name} — {new URL(camera.url).hostname}</option>)}
+                    <option value="">Use another camera…</option>
+                  </select>
+                </label>
+                <label>Stream URL<input aria-label="Stream URL" type="url" placeholder="http://your-camera.local/stream" value={project.networkCameraUrl ?? defaultNetworkCameraUrl}
                   onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }} /></label>
                 {cameraOn ? <button onClick={disconnectCamera}>Disconnect</button> :
                   <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
