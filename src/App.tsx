@@ -6,6 +6,8 @@ import { detectionAreaRatio } from './core/DetectionDistance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Aperture,
+  Sun,
+  Moon,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -65,6 +67,7 @@ import { HardwareTest } from './components/HardwareTest';
 import { SensorInputs } from './components/SensorInputs';
 import type { SensorState } from './core/Sensors';
 import './styles.css';
+import './theme.css';
 const networkCameras = [1, 2, 3, 4].map(number => ({
   name: `Camera ${number}`,
   url: `http://robosight-cam-${String(number).padStart(2, '0')}.local/stream`,
@@ -81,6 +84,14 @@ const demoDetection: Detection = {
   centerY: 360,
 };
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try { return localStorage.getItem('sight2vision.theme') === 'dark' ? 'dark' : 'light'; }
+    catch { return 'light'; }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('sight2vision.theme', theme); } catch { /* Theme still works without storage. */ }
+  }, [theme]);
   const [project, setProject] = useState<Project>(makeProject);
   const projectRef = useRef(project);
   projectRef.current = project;
@@ -713,6 +724,12 @@ export default function App() {
           <span className="beta">BETA</span>
         </a>
         <div className="header-right">
+          <button className="theme-toggle" role="switch" aria-label="Dark mode" aria-checked={theme === 'dark'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setTheme(current => current === 'light' ? 'dark' : 'light')}>
+            {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
+            <span>{theme === 'dark' ? 'Dark' : 'Light'}</span><span className="theme-toggle-track" aria-hidden="true"><span /></span>
+          </button>
           <span className="local-badge">
             <span /> Runs on your device
           </span>
