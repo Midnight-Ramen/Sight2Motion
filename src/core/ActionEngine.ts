@@ -156,8 +156,9 @@ export class ActionEngine {
     return this.runSteps(actions.map(action => ({ action })));
   }
   async reset(actions: Action[]): Promise<boolean> {
-    await this.stop();
+    const stopping = this.stop();
     const revision = this.revision;
+    await stopping;
     await this.running;
     if (revision !== this.revision) return false;
     return this.run(actions);
@@ -243,7 +244,8 @@ export class ActionEngine {
         this.activeRuleIds.clear();
         this.pendingOutputOwners.clear();
         this.onError();
-        this.log(`Robot paused. ${error instanceof Error ? error.message : 'Reconnect and try again.'}`);
+        console.warn('Robot action failed:', error);
+        this.log('Robot paused. Check its connection and try again.');
       }
       try {
         await this.robot.stop();

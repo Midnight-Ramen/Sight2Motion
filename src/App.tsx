@@ -157,6 +157,8 @@ export default function App() {
   const mirrorHorizontal = project.mirrorHorizontal ?? false;
   const [cameraError, setCameraError] = useState(false);
   const cameraAttempt = useRef(0);
+  const cameraConnecting = useRef(false);
+  const projectTransition = useRef(0);
   const networkImage = useRef<HTMLImageElement>(null);
   const [cameraOn, setCameraOn] = useState(false),
     [cameraBusy, setCameraBusy] = useState(false);
@@ -430,6 +432,11 @@ export default function App() {
     }
   }, [detections, project.vision.visualize, project.rules, demo, visionCapabilities]);
   async function connectCamera(source: 'local' | 'network' = cameraSource) {
+    if (cameraConnecting.current) return;
+    cameraConnecting.current = true;
+    ++loopVersion.current;
+    pause();
+    consume([]);
     const attempt = ++cameraAttempt.current;
     pause(); setDemo(false); setCameraOn(false); setCameraError(false);
     setCameraBusy(true); setNotice('');
@@ -459,10 +466,11 @@ export default function App() {
         ? 'Camera not reachable. Check that the camera is powered on and reachable from this network. The browser may have blocked the network camera connection.'
         : 'Camera unavailable. Allow camera access in your browser, close other camera apps, and try again. You can also try the demo.');
     } finally {
-      if (attempt === cameraAttempt.current) setCameraBusy(false);
+      if (attempt === cameraAttempt.current) { cameraConnecting.current = false; setCameraBusy(false); }
     }
   }
   function disconnectCamera() {
+    cameraConnecting.current = false;
     ++cameraAttempt.current; ++loopVersion.current;
     camera.stop(); pause(); consume([]);
     setCameraOn(false); setCameraBusy(false); setCameraError(false); setDemo(false);
@@ -480,7 +488,7 @@ export default function App() {
     setModelBusy(false);
     setModelError(false);
     setBackend('Not loaded');
-    setDetections([]);
+    consume([]);
     setAvailableClasses([]);
     ++loopVersion.current;
     const version = ++modelVersion.current;
@@ -649,10 +657,13 @@ export default function App() {
       log('Project reset; rules and sensor configuration cleared.');
     } finally { setHardwareBusy(false); }
   }
-  function replaceProject(p: Project) {
+  async function replaceProject(p: Project) {
+    const transition = ++projectTransition.current;
     disconnectCamera();
-    pause();
-    if (p.robotType !== robotMode) void selectRobot(p.robotType, false);
+    await actions.stop();
+    if (transition !== projectTransition.current) return;
+    if (p.robotType !== robotMode) await selectRobot(p.robotType, false);
+    if (transition !== projectTransition.current) return;
     if ((p.visionProvider ?? 'yolo') !== providerKind || p.teachableMachineUrl !== project.teachableMachineUrl)
       resetModel(p.visionProvider ?? 'yolo');
     setTmUrlInput(p.teachableMachineUrl ?? '');
@@ -668,7 +679,7 @@ export default function App() {
       setDirty(false);
     }
   }
-  function projectCommand(command: 'new' | 'duplicate' | 'save' | 'load' | 'export') {
+  async function projectCommand(command: 'new' | 'duplicate' | 'save' | 'load' | 'export') {
     try {
       if (command === 'save') {
         storage.export(project);
@@ -688,7 +699,7 @@ export default function App() {
                 id: crypto.randomUUID(),
                 name: `${project.name.slice(0, 90)} copy`,
               };
-        replaceProject(p);
+        await replaceProject(p);
         setDirty(true);
       }
     } catch {
@@ -702,7 +713,7 @@ export default function App() {
       if (file.size > 1_000_000) throw new Error();
       const p = parseProject(await file.text());
       preserve();
-      replaceProject({ ...p, id: crypto.randomUUID() });
+      await replaceProject({ ...p, id: crypto.randomUUID() });
       setDirty(true);
       setNotice('Project imported. AI is paused.');
     } catch {

@@ -15,6 +15,19 @@ const person: Detection = {
   centerX: 10,
   centerY: 10,
 };
+it('emergency STOP supersedes a reset waiting for transport acknowledgement', async () => {
+  const robot = new MockRobotAdapter();
+  await robot.connect();
+  let acknowledge!: () => void;
+  vi.spyOn(robot, 'stop').mockImplementationOnce(() => new Promise<void>(resolve => { acknowledge = resolve; }));
+  const execute = vi.spyOn(robot, 'executeAction');
+  const engine = new ActionEngine(robot);
+  const resetting = engine.reset([makeAction('beak')]);
+  await engine.stop();
+  acknowledge();
+  expect(await resetting).toBe(false);
+  expect(execute).not.toHaveBeenCalled();
+});
 describe('DetectionManager', () => {
   it('tracks stable appearance and disappearance with confidence filtering', () => {
     const m = new DetectionManager();

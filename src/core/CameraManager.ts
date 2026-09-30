@@ -55,6 +55,14 @@ export class LocalCameraSource {
 }
 
 export class CameraManager {
+  private connecting?: { source: object; key: string; promise: Promise<unknown> };
+  private trackConnection<T>(source: object, key: string, promise: Promise<T>): Promise<T> {
+    const connection = { source, key, promise };
+    this.connecting = connection;
+    const clear = () => { if (this.connecting === connection) this.connecting = undefined; };
+    void promise.then(clear, clear);
+    return promise;
+  }
   private local = new LocalCameraSource();
   private network?: NetworkCameraSource;
   private generation = 0;
@@ -63,17 +71,22 @@ export class CameraManager {
   get width() { const f = this.frame; return this.network?.width ?? (f ? ('videoWidth' in f ? f.videoWidth : 'naturalWidth' in f ? f.naturalWidth : f.width) : 0); }
   get height() { const f = this.frame; return this.network?.height ?? (f ? ('videoHeight' in f ? f.videoHeight : 'naturalHeight' in f ? f.naturalHeight : f.height) : 0); }
   connect(video: HTMLVideoElement, deviceId?: string) {
+    if (this.connecting?.source === video && this.connecting.key === (deviceId ?? ''))
+      return this.connecting.promise as Promise<MediaDeviceInfo[]>;
     this.stop();
-    return this.local.connect(video, deviceId);
+    return this.trackConnection(video, deviceId ?? '', this.local.connect(video, deviceId));
   }
   connectNetwork(image: HTMLImageElement, url: string, ended: () => void) {
+    if (this.connecting?.source === image && this.connecting.key === url)
+      return this.connecting.promise as Promise<void>;
     this.stop();
     const generation = this.generation;
     this.network = new NetworkCameraSource(image);
-    return this.network.connect(url, () => { if (generation === this.generation) ended(); });
+    return this.trackConnection(image, url, this.network.connect(url, () => { if (generation === this.generation) ended(); }));
   }
   onEnded(callback: () => void) { this.local.onEnded(callback); }
   stop() {
+    this.connecting = undefined;
     ++this.generation;
     this.local.stop();
     this.network?.stop();

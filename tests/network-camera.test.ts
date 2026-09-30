@@ -20,6 +20,26 @@ beforeEach(() => {
   }));
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it('duplicate network Connect shares one pending client', async () => {
+  const manager = new CameraManager(), img = image(), ended = vi.fn();
+  const first = manager.connectNetwork(img, 'http://camera/stream', ended);
+  const second = manager.connectNetwork(img, 'http://camera/stream', ended);
+  expect(second).toBe(first);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await flush(); stream.enqueue(part); await first;
+  manager.stop(); await flush(); expect(ended).not.toHaveBeenCalled();
+});
+it('duplicate laptop Connect shares one permission request', async () => {
+  let grant!: (value: MediaStream) => void;
+  const getUserMedia = vi.fn(() => new Promise<MediaStream>(resolve => { grant = resolve; }));
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia, enumerateDevices: async () => [] } });
+  const manager = new CameraManager();
+  const video = { srcObject: null, play: async () => {} } as unknown as HTMLVideoElement;
+  const first = manager.connect(video), second = manager.connect(video);
+  expect(second).toBe(first); expect(getUserMedia).toHaveBeenCalledTimes(1);
+  const stop = vi.fn(); grant({ getTracks: () => [{ stop }] } as unknown as MediaStream);
+  await first; manager.stop(); expect(stop).toHaveBeenCalledOnce();
+});
 it('legacy projects default to local and camera fields survive save/load', () => {
   const p=makeProject(); delete p.cameraSource;
   expect(parseProject(JSON.stringify(p)).cameraSource).toBe('local');

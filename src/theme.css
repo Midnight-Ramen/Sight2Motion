@@ -125,3 +125,10 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
 .more-menu summary { background: var(--surface-raised); color: var(--ink); border-color: var(--line); }
 .modal li b { color: var(--ink); }
 .coral { background: var(--accent-soft); color: var(--accent); }
+
+/* Native dropdown popups can stay white on Windows even in dark mode. */
+:root[data-theme='dark'] select option,
+:root[data-theme='dark'] select optgroup {
+  color: #000;
+  background-color: #fff;
+}
