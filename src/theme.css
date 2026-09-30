@@ -125,8 +125,21 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
 .more-menu summary { background: var(--surface-raised); color: var(--ink); border-color: var(--line); }
 .modal li b { color: var(--ink); }
 .coral { background: var(--accent-soft); color: var(--accent); }
+.setup-guidance { color: var(--muted); font-size: 14px; margin: -8px 0 18px; }
+
+.project-bar { flex-wrap: wrap; }
+.project-bar > div:first-child { min-width: 0; max-width: 100%; }
+.project-buttons { flex-shrink: 0; flex-wrap: wrap; }
+.title-line { flex-wrap: wrap; }
+.title-line input { width: auto; field-sizing: content; min-width: 0; max-width: 100%; flex-shrink: 0; padding-right: .25em; }
 
 /* Native dropdown popups can stay white on Windows even in dark mode. */
+.template-choice { margin: 12px 0; }
+.template-choice > button { width: 100%; align-items: flex-start; flex-direction: column; text-align: left; gap: 6px; padding: 14px; }
+.template-choice > button span { font-size: 13px; color: var(--muted); }
+.template-ports { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 0; }
+.template-ports label { display: grid; gap: 4px; font-size: 13px; }
+
 :root[data-theme='dark'] select option,
 :root[data-theme='dark'] select optgroup {
   color: #000;

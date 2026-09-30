@@ -68,6 +68,9 @@ import { SensorInputs } from './components/SensorInputs';
 import type { SensorState } from './core/Sensors';
 import './styles.css';
 import './theme.css';
+import { ProjectTemplatePicker } from './components/ProjectTemplatePicker';
+import { selectProjectTemplate } from './core/ProjectTemplates';
+import { setupReadiness, focusSetupSection } from './core/SetupReadiness';
 const networkCameras = [1, 2, 3, 4].map(number => ({
   name: `Camera ${number}`,
   url: `http://robosight-cam-${String(number).padStart(2, '0')}.local/stream`,
@@ -84,13 +87,10 @@ const demoDetection: Detection = {
   centerY: 360,
 };
 export default function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    try { return localStorage.getItem('sight2vision.theme') === 'dark' ? 'dark' : 'light'; }
-    catch { return 'light'; }
-  });
+  const [choosingTemplate, setChoosingTemplate] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('sight2vision.theme', theme); } catch { /* Theme still works without storage. */ }
   }, [theme]);
   const [project, setProject] = useState<Project>(makeProject);
   const projectRef = useRef(project);
@@ -217,6 +217,18 @@ export default function App() {
   }, [modalOpen]);
   const [customTracked, setCustomTracked] = useState<TrackedTarget | null>(null);
   const appearanceVisible = customTracked?.detectorLabel === 'appearance' && customTracked.state === 'TRACKING';
+  const [usableFrame, setUsableFrame] = useState(false);
+  useEffect(() => {
+    const update = () => setUsableFrame(cameraOn && !!camera.frame);
+    update();
+    const timer = setInterval(update, 250);
+    return () => clearInterval(timer);
+  }, [camera, cameraOn]);
+  const readiness = setupReadiness(project, {
+    usableFrame: cameraOn && usableFrame, modelReady, classes: availableClasses,
+    connected, hardwareBusy, running: ai, demo,
+    trackedName: customTracked?.state === 'TRACKING' ? customTracked.displayName : undefined,
+  });
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
     setNotice('Changes ready. Press Play rules to run your updated actions.');
@@ -504,7 +516,7 @@ export default function App() {
     resetModel(kind);
     edit({ ...project, visionProvider: kind });
   }
-  async function loadModel(file?: File) {
+  async function loadModel(file?: File, kind: VisionProviderKind = providerKind) {
     pause();
     setDemo(false);
     setModelBusy(true);
@@ -514,7 +526,6 @@ export default function App() {
     setNotice('');
     ++loopVersion.current;
     const version = ++modelVersion.current;
-    const kind = providerKind;
     const previous = modelWork.current;
     const work = (async () => {
       await previous.catch(() => {});
@@ -680,6 +691,7 @@ export default function App() {
     }
   }
   async function projectCommand(command: 'new' | 'duplicate' | 'save' | 'load' | 'export') {
+    if (command === 'new') { pause(); setChoosingTemplate(true); return; }
     try {
       if (command === 'save') {
         storage.export(project);
@@ -691,10 +703,7 @@ export default function App() {
       } else if (command === 'export') storage.export(project);
       else {
         preserve();
-        const p =
-          command === 'new'
-            ? makeProject()
-            : {
+        const p = {
                 ...structuredClone(project),
                 id: crypto.randomUUID(),
                 name: `${project.name.slice(0, 90)} copy`,
@@ -763,6 +772,7 @@ export default function App() {
                 aria-label="Project name"
                 aria-describedby="project-name-help"
                 placeholder="Name Your Project"
+                size={Math.max(20, project.name.length + 2)}
                 onFocus={e => e.currentTarget.select()}
                 maxLength={100}
                 value={project.name}
@@ -816,33 +826,33 @@ export default function App() {
           {[
             {
               label: 'Connect camera',
-              done: cameraOn || demo,
+              done: readiness.camera,
               icon: Camera,
-              action: () => void connectCamera(),
+              action: () => focusSetupSection('camera-panel'),
             },
             {
               label: 'Load AI model',
-              done: modelReady || demo,
+              done: readiness.vision,
               icon: Sparkles,
-              action: () => providerKind === 'yolo' ? modelInput.current?.click() : document.getElementById('tm-model-url')?.focus(),
+              action: () => focusSetupSection('model-panel'),
             },
             {
               label: 'Connect robot',
-              done: connected,
+              done: readiness.robot,
               icon: Radio,
               action: () =>
-                document.getElementById('robot-panel')?.scrollIntoView({ behavior: 'smooth' }),
+                focusSetupSection('robot-panel'),
             },
             {
               label: 'Create a rule',
-              done: project.rules.length > 0,
+              done: readiness.rules,
               icon: SlidersHorizontal,
               action: () =>
-                document.getElementById('rules')?.scrollIntoView({ behavior: 'smooth' }),
+                focusSetupSection('rules'),
             },
-            { label: 'Bring it to life', done: ai, icon: Zap, action: toggleAI },
+            { label: ai ? 'Running' : 'Bring it to life', done: readiness.play || ai, icon: Zap, action: () => focusSetupSection('play-controls') },
           ].map((s, i) => (
-            <button key={s.label} onClick={s.action} disabled={cameraBusy || modelBusy}>
+            <button key={s.label} onClick={s.action}>
               <span className={`step-number ${s.done ? 'done' : ''}`}>
                 {s.done ? <Check size={13} /> : i + 1}
               </span>
@@ -851,6 +861,7 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <p className="setup-guidance" role="status">{readiness.helper}</p>
         {notice && (
           <div className="notice" role="status">
             <CircleHelp size={17} />
@@ -861,7 +872,7 @@ export default function App() {
           </div>
         )}
         <div className="studio-grid">
-          <section className="panel camera-panel">
+          <section className="panel camera-panel" id="camera-panel" tabIndex={-1}>
             <div className="panel-heading">
               <h2>
                 <Camera size={18} />
@@ -1022,7 +1033,7 @@ export default function App() {
             </div>
           </section>
           <aside>
-            <section className="panel robot-panel" id="robot-panel">
+            <section className="panel robot-panel" id="robot-panel" tabIndex={-1}>
               <div className="panel-heading">
                 <h2>
                   <Radio size={18} />
@@ -1057,7 +1068,7 @@ export default function App() {
               {robotMode === 'hummingbird' && <SensorInputs configuration={project.sensorConfiguration ?? []} state={sensorState}
                 onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />}
             </section>
-            <section className="panel model-panel">
+            <section className="panel model-panel" id="model-panel" tabIndex={-1}>
               <div className="panel-heading">
                 <h2>
                   <Sparkles size={17} />
@@ -1188,7 +1199,7 @@ export default function App() {
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
           </aside>
         </div>
-        <section id="rules" className="rules-section">
+        <section id="rules" className="rules-section" tabIndex={-1}>
           <div className="section-heading">
             <div>
               <h2>
@@ -1197,8 +1208,8 @@ export default function App() {
               </h2>
               <p role="status">{ai ? 'Running · Stop, then Play to test again with the object still visible.' : 'Paused · Press Play rules after making changes. Detection continues while paused.'}</p>
             </div>
-            <div className="rules-controls">
-              <button className="primary" disabled={ai || hardwareBusy} onClick={toggleAI}>
+            <div className="rules-controls" id="play-controls" tabIndex={-1}>
+              <button className="primary" disabled={ai || !readiness.play} onClick={toggleAI}>
                 <Play size={16} /> Play rules
               </button>
               <button onClick={stop}><Square size={16} /> Stop rules</button>              <button
@@ -1329,6 +1340,16 @@ export default function App() {
           e.target.value = '';
         }}
       />
+      {choosingTemplate && <ProjectTemplatePicker onClose={() => setChoosingTemplate(false)} onSelect={async (template, ports) => {
+        preserve();
+        await selectProjectTemplate(template, ports, replaceProject);
+        setDirty(true);
+        setChoosingTemplate(false);
+        setNotice(template.helper ?? 'Project ready. Connect your camera and robot when you are ready. Rules are paused.');
+        // Use the template's provider explicitly: this handler may still close over the previous project.
+        if (template.id === 'follow' && (providerKind !== 'yolo' || !modelReady))
+          await loadModel(undefined, 'yolo');
+      }} />}
       {(help || saved !== null) && (
         <div
           className="modal-backdrop"
