@@ -7,15 +7,19 @@ export class RuleEngine {
   private detection = new DetectionManager();
   /** Currently visible and initially qualified; independent of trigger cooldown. */
   activeRules: Rule[] = [];
+  private results: Record<string, 'TRUE' | 'FALSE' | 'Waiting'> = {};
+  get diagnostics(): Readonly<Record<string, 'TRUE' | 'FALSE' | 'Waiting'>> { return { ...this.results }; }
   private states = new Map<string, { fired: boolean; qualified: boolean; last: number }>();
   reset() {
     this.detection.reset();
     this.states.clear();
     this.activeRules = [];
+    this.results = {};
   }
   evaluate(rules: Rule[], detections: VisionResult[], now: number, capabilities: VisionCapabilities = YOLO_CAPABILITIES,
     sensors: { state: SensorState; configuration: SensorDescriptor[]; available: boolean } = { state: {}, configuration: [], available: false }): Rule[] {
     const result: Rule[] = [];
+    this.results = {};
     this.activeRules = [];
     for (const rule of rules) {
       if (!rule.enabled || !compatibleRule(rule, capabilities)) continue;
@@ -40,6 +44,7 @@ export class RuleEngine {
       }
       if (presence.visible && now - presence.since >= rule.minDuration) state.qualified = true;
       if (presence.visible && state.qualified) this.activeRules.push(rule);
+      this.results[rule.id] = presence.visible ? state.qualified ? 'TRUE' : 'Waiting' : 'FALSE';
       const ready =
         now - state.last >= Math.max(rule.cooldown, rule.mode === 'interval' ? rule.interval : 0);
       const trigger =

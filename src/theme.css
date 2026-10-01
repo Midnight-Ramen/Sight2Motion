@@ -143,6 +143,14 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
 .template-port-hint { font-size: 13px; margin: 8px 0 0; }
 .template-ports select { max-width: 100%; }
 .template-ports label { min-width: 0; }
+.live-diagnostics { margin: 20px 0; padding: 16px; }
+.live-diagnostics > summary { cursor: pointer; font-weight: 600; }
+.diagnostics-sections { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 16px; }
+.diagnostics-sections section { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.diagnostics-sections h3 { font-size: 15px; }
+.diagnostics-sections p, .diagnostics-sections li { font-size: 13px; line-height: 1.6; }
+.diagnostics-sections ul { padding-left: 18px; }
+.diagnostics-sections small { color: var(--muted); }
 #play-blocker { margin-top: 8px; }
 .rule-card > p[role=status] { margin: 12px 20px; color: var(--accent); }
 

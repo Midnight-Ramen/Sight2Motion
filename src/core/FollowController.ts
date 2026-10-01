@@ -65,6 +65,11 @@ export class FollowController {
   private atDistance = false;
   private trackedAt = -Infinity;
   diagnostics: ReturnType<typeof trackedFollowCommand> | null = null;
+  private waitingForTarget = false;
+  /** Read-only snapshot of the last dispatched command, not measured wheel speed. */
+  get commandSnapshot() {
+    return { active: !this.abort.signal.aborted, waiting: this.waitingForTarget, wheels: this.previous ? [...this.previous] as [number, number] : null };
+  }
   constructor(private action: Action,
     private send: (left: number, right: number, signal: AbortSignal) => Promise<void>,
     private lost: () => void,
@@ -128,6 +133,7 @@ export class FollowController {
       (t.x + t.width / 2 - previous.x - previous.width / 2) ** 2 +
       (t.y + t.height / 2 - previous.y - previous.height / 2) ** 2 : 0;
     const target = [...targets].sort((a, b) => previous ? centerDistance(a) - centerDistance(b) : b.width * b.height - a.width * a.height)[0];
+    this.waitingForTarget = !target;
     if (!target) return; // Independent timer also covers inference that stops producing frames.
     this.target = target;
     this.lastTargetSeenAt = now;

@@ -14,6 +14,11 @@ export class ActionEngine {
   private selectedStart = 0;
   get followingSelectedTarget() { return !!this.selectedFollow; }
   get selectedFollowDiagnostics() { return this.selectedFollow?.diagnostics ?? null; }
+  get followSnapshot() {
+    const controller = this.selectedFollow ?? this.follow?.controller;
+    return { ...controller?.commandSnapshot, selected: !!this.selectedFollow,
+      target: this.currentRules.find(rule => rule.id === this.follow?.ruleId)?.className };
+  }
   async startSelectedFollow(target: TrackedTarget, capturedAt: number, timeout: number, config: TrackedFollowSettings) {
     const stopping = this.stop();
     const revision = this.revision, start = ++this.selectedStart;

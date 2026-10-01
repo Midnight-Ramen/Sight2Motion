@@ -1,4 +1,5 @@
 import { cameraFailure, modelGuidance, detectionEmpty } from './core/StudentGuidance';
+import { LiveDiagnostics } from './components/LiveDiagnostics';
 import type { TrackedTarget } from './core/TargetTracker';
 import { ObjectSelection } from './components/ObjectSelection';
 import { orientDetections } from './core/CameraOrientation';
@@ -1195,6 +1196,9 @@ export default function App() {
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
           </aside>
         </div>
+        <LiveDiagnostics project={project} detections={detections} target={customTracked} sensors={sensorState}
+          ruleResults={rules.diagnostics} follow={actions.followSnapshot} camera={cameraOn && usableFrame}
+          model={modelReady} robot={connected} running={ai} fps={measuredFps} demo={demo} />
         <section id="rules" className="rules-section" tabIndex={-1}>
           <div className="section-heading">
             <div>
