@@ -139,6 +139,12 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
 .template-choice > button span { font-size: 13px; color: var(--muted); }
 .template-ports { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 0; }
 .template-ports label { display: grid; gap: 4px; font-size: 13px; }
+.template-choice > button:disabled { opacity: 1; border-style: dashed; color: var(--muted); }
+.template-port-hint { font-size: 13px; margin: 8px 0 0; }
+.template-ports select { max-width: 100%; }
+.template-ports label { min-width: 0; }
+#play-blocker { margin-top: 8px; }
+.rule-card > p[role=status] { margin: 12px 20px; color: var(--accent); }
 
 :root[data-theme='dark'] select option,
 :root[data-theme='dark'] select optgroup {

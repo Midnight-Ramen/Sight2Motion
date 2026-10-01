@@ -50,7 +50,7 @@ export function setupReadiness(project: Project, state: SetupState) {
     !rules ? problems[0] ?? 'Next: Add and enable a rule.' :
     state.hardwareBusy ? 'Wait for the robot operation to finish.' :
     !state.connected ? 'Ready! Connect your robot and press Play.' : 'Ready! Press Play.';
-  return { camera, vision, robot, rules, play, helper };
+  return { camera, vision, robot, rules, play, helper, ruleProblems: Object.fromEntries(project.rules.map(rule => [rule.id, ruleProblem(rule)])) };
 }
 export function focusSetupSection(id: string) {
   const section = document.getElementById(id);

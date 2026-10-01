@@ -156,7 +156,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       snapshot.current ??= document.createElement('canvas');
       snapshot.current.width = camera.width; snapshot.current.height = camera.height;
       snapshot.current.getContext('2d')!.drawImage(camera.frame, 0, 0);
-      setActive(true); setStatus('Loading MobileSAM…');
+      setActive(true); setStatus('MobileSAM is loading. Wait a moment before selecting an object.');
       // Defer only rendering; capture itself occurs immediately on button activation.
       requestAnimationFrame(() => { if (version === generation.current) draw(undefined,{points:[]}); });
       if (!service.current) {
@@ -169,7 +169,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       setStatus('Preparing image…');
       await service.current.capture(snapshot.current);
       if (version === generation.current) setStatus('Click an object · frozen frame');
-    } catch (e) { if (version === generation.current) setStatus(String(e)); }
+    } catch (e) { if (version === generation.current) { console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); } }
     finally { if (version === generation.current) { locked.current = false; setBusy(false); } }
   }
   function pointFrom(event: React.MouseEvent<HTMLCanvasElement> | React.PointerEvent<HTMLCanvasElement>) {
@@ -192,7 +192,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       if (version !== generation.current) return;
       const named={...result,displayName:displayName.trim() || 'Selected object'};
       setSelected(named); draw(named,next); retryMatch(named,false);
-    } catch (e) { if (version === generation.current) { setSelected(null); setAssociation(null); draw(undefined,next); setStatus(String(e)); } }
+    } catch (e) { if (version === generation.current) { setSelected(null); setAssociation(null); draw(undefined,next); console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); } }
     finally { if (version === generation.current) { locked.current = false; setBusy(false); } }
   }
   function select(event: React.MouseEvent<HTMLCanvasElement>) {
@@ -248,7 +248,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       capturedDetections.current = null;
       setStatus('Appearance tracking  -  one active object  -  Follow must be started separately.');
       await service.current?.clear().catch(() => {});
-    } catch (e) { appearance.stop(); appearanceActive.current = false; setTarget(null); setStatus(String(e)); }
+    } catch (e) { appearance.stop(); appearanceActive.current = false; setTarget(null); console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); }
   }
   const controls = <div className={`selection-controls${active && controlsContainer ? ' selection-editor' : ''}`}>
       <button disabled={!available || busy} onClick={() => void capture()}>{active ? 'Capture new frame' : 'Select Object'}</button>
@@ -273,6 +273,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       {!active && target && <span role="status">{target.targetLost ? 'TARGET LOST' : target.state === 'TRACKING' ? 'TARGET LOCKED' : 'TARGET UNCERTAIN'} · Tracking: {target.displayName} · Detector: {target.detectorLabel}
         {' · '}X error {target.horizontalError.toFixed(2)}</span>}
       {status && <span role="status">{status}</span>}
+      {available && !active && !target && !status && <span>Select an object in the camera view before using Selected Target.</span>}
       {selected && <small>{selected.area.toLocaleString()} pixels selected</small>}
     </div>;
   return <>

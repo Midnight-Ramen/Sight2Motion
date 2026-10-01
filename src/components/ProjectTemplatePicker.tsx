@@ -18,12 +18,13 @@ export function ProjectTemplatePicker({ onSelect, onClose }: {
           catch (error) { console.warn('Template creation failed:', error); setError('Could not start this project. Check your selections and try again.'); }
           finally { setBusy(false); }
         }}><strong>{template.name}</strong><span>{template.description}</span></button>
+      {template.ports && <p className="template-port-hint">Select the connected ports below, then choose this project.</p>}
       {template.ports && <div className="template-ports">
         {(['sensor', 'output'] as const).filter(kind => kind === 'output' || template.ports!.sensor).map(kind =>
           <label key={kind}>{kind === 'sensor' ? 'Distance sensor port' : `${template.ports!.output} port`}
             <select aria-label={`${template.name} ${kind} port`} disabled={busy} value={ports[template.id]?.[kind] ?? ''}
               onChange={e => setPorts(current => ({ ...current, [template.id]: { ...current[template.id], [kind]: Number(e.target.value) || undefined } }))}>
-              <option value="">Choose connected port</option>
+              <option value="">Select Port</option>
               {Array.from({ length: kind === 'sensor' ? 3 : template.ports!.max }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
             </select></label>)}
       </div>}

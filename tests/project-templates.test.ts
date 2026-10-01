@@ -16,7 +16,7 @@ it('Reaction example is editable and each project has independent IDs and state'
   const a = template('reaction').createProject(), b = template('reaction').createProject();
   expect(a.rules[0].actions[0]).toMatchObject({ kind: 'beak', color: '#51d691' });
   a.rules[0].name = 'Changed'; a.rules[0].actions[0].color = '#000000';
-  expect(b.rules[0].name).toBe('Say hello');
+  expect(b.rules[0].name).toBe('Person turns beak green');
   expect(a.id).not.toBe(b.id); expect(a.rules[0].id).not.toBe(b.rules[0].id);
 });
 it('Hummingbird templates require explicit ports and use supported actions', () => {

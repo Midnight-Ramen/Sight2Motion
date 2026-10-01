@@ -26,7 +26,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     }] }) },
   { id: 'reaction', name: 'Object Reaction Robot', description: 'Make your robot react when the camera recognizes something.',
     recommendedRobot: 'finch', visionProvider: 'yolo',
-    createProject: () => ({ ...base('Object Reaction Robot'), selectedClasses: ['person'], rules: [makeRule()] }) },
+    createProject: () => ({ ...base('Object Reaction Robot'), selectedClasses: ['person'], rules: [{ ...makeRule(), name: 'Person turns beak green' }] }) },
   { id: 'sensor', name: 'Vision + Sensor Challenge', description: 'Combine AI vision with a physical sensor.',
     recommendedRobot: 'hummingbird', visionProvider: 'yolo', ports: { output: 'LED', max: 3, sensor: true },
     createProject: (ports = {}) => {

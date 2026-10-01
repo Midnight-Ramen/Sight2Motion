@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.6.0 — Guided Student Experience
+
+- Added six editable project templates, including blank projects and custom AI classifiers.
+- Upgraded setup progression with clickable steps and actual readiness checks.
+- Added contextual next-step guidance and clear explanations when Play is unavailable.
+- Improved empty states and actionable camera, model, robot, sensor, and rule error guidance.
+- Clarified template port requirements and example rule names.
+- Made student-facing action wording more consistent.
+- Polished light/dark readability and guidance spacing.
+- Release verification: 222 tests passed, 0 failed; production build passed.
+
 ## v0.5.0 — Classroom Stability Release
 
 - Hardened emergency STOP so pending output resets cannot resume actions.

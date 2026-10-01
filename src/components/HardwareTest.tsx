@@ -43,13 +43,13 @@ export function HardwareTest({
           </dd>
         </div>
       </dl>
-      <p role="status">{status.message}</p>
+      <p role="status">{connected ? 'Connected. Your robot is ready.' : status.connection === 'connecting' ? 'Looking for your robot. Wait a moment.' : status.connection === 'error' ? 'Robot connection failed or was lost. Check that it has stopped, reconnect in BlueBird, then press Connect.' : status.connector !== 'detected' ? 'BirdBrain Connector was not detected. Open BlueBird, connect your robot as A, then try Connect again.' : `Robot not connected. Connect your ${name} as A in BlueBird, then press Connect.`}</p>
       <button disabled={busy} onClick={connected ? onDisconnect : onAttach}>
         {status.connection === 'connecting'
           ? 'Checking…'
           : connected
             ? 'Disconnect from app'
-            : `Attach to ${name} A`}
+            : `Connect ${name} A`}
       </button>
       <div className="hardware-test-buttons">
         {manualTests(robotType).map(test => <button key={test.label} disabled={!connected || busy} onClick={() => onAction(test.action)}>{test.label}</button>)}

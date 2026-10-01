@@ -26,7 +26,9 @@ export function RuleCard({
   robotName = 'Finch 2',
   sensors = [],
   sensorsAvailable = false,
+  guidance,
 }: {
+  guidance?: string;
   detections?: VisionResult[];
   visionCapabilities?: VisionCapabilities;
   robotName?: string;
@@ -76,12 +78,13 @@ export function RuleCard({
           <Trash2 size={16} />
         </button>
       </div>
+      {guidance && compatibleRule(rule, visionCapabilities) && <p role="status">{guidance}</p>}
       <div className="rule-body">
         <div className="condition">
           <span className="eyebrow">WHEN THIS HAPPENS</span>
           {!compatibleRule(rule, visionCapabilities) && <div role="status">
             <b>Needs update</b>
-            <p>This model doesn't support Location or Near/Far.</p>
+            <p>This rule needs bounding boxes. Choose object detection or convert to a classification rule.</p>
             <button onClick={() => onChange(classificationRule(rule))}>Convert to classification rule</button>
           </div>}
           {!visionCapabilities.boundingBoxes && <small>Image classification recognizes what the camera sees, but not where the object is located.</small>}

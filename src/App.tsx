@@ -1,3 +1,4 @@
+import { cameraFailure, modelGuidance, detectionEmpty } from './core/StudentGuidance';
 import type { TrackedTarget } from './core/TargetTracker';
 import { ObjectSelection } from './components/ObjectSelection';
 import { orientDetections } from './core/CameraOrientation';
@@ -155,7 +156,7 @@ export default function App() {
   const [storage] = useState(() => new ProjectStorage());
   const cameraSource = project.cameraSource ?? 'local';
   const mirrorHorizontal = project.mirrorHorizontal ?? false;
-  const [cameraError, setCameraError] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const cameraAttempt = useRef(0);
   const cameraConnecting = useRef(false);
   const projectTransition = useRef(0);
@@ -450,13 +451,13 @@ export default function App() {
     pause();
     consume([]);
     const attempt = ++cameraAttempt.current;
-    pause(); setDemo(false); setCameraOn(false); setCameraError(false);
+    pause(); setDemo(false); setCameraOn(false); setCameraError('');
     setCameraBusy(true); setNotice('');
     const ended = () => {
       if (attempt !== cameraAttempt.current) return;
       ++loopVersion.current;
-      setCameraOn(false); setCameraError(true); pause(); consume([]);
-      setNotice('Camera not reachable. Check that the camera is powered on and reachable from this network.');
+      setCameraOn(false); pause(); consume([]);
+      setCameraError('Camera stream stopped. Check its power and connection, then press Connect to retry.');
     };
     try {
       if (source === 'network') {
@@ -473,10 +474,8 @@ export default function App() {
     } catch (error) {
       if (attempt !== cameraAttempt.current) return;
       console.warn('Camera connection failed:', error);
-      setCameraOn(false); setCameraError(true);
-      setNotice(source === 'network'
-        ? 'Camera not reachable. Check that the camera is powered on and reachable from this network. The browser may have blocked the network camera connection.'
-        : 'Camera unavailable. Allow camera access in your browser, close other camera apps, and try again. You can also try the demo.');
+      setCameraOn(false);
+      setCameraError(cameraFailure(source === 'network', error));
     } finally {
       if (attempt === cameraAttempt.current) { cameraConnecting.current = false; setCameraBusy(false); }
     }
@@ -485,7 +484,7 @@ export default function App() {
     cameraConnecting.current = false;
     ++cameraAttempt.current; ++loopVersion.current;
     camera.stop(); pause(); consume([]);
-    setCameraOn(false); setCameraBusy(false); setCameraError(false); setDemo(false);
+    setCameraOn(false); setCameraBusy(false); setCameraError(''); setDemo(false);
   }
   function switchCamera(source: 'local' | 'network') {
     disconnectCamera();
@@ -556,10 +555,7 @@ export default function App() {
       if (version !== modelVersion.current) return;
       setModelError(true);
       setBackend('Not loaded');
-      setNotice(
-        kind === 'teachable-machine' ? "We couldn't load this Teachable Machine model. Check the model link and try again." :
-          'YOLO11n could not load. Use an FP32 COCO detection ONNX model, 640 × 640, without NMS. ' + String(error),
-      );
+      console.warn('Model load failed:', error);
     } finally {
       if (version === modelVersion.current) setModelBusy(false);
     }
@@ -592,7 +588,7 @@ export default function App() {
     setDemo(true);
     setDemoVisible(true);
     setNotice('Demo mode uses a simulated person detection. No camera or AI model is running.');
-    log('Demo scene ready. Attach your robot, then enable AI.');
+    log('Demo scene ready. Connect your robot, then press Play rules.');
   }
   async function selectRobot(mode: RobotType, updateProject = true) {
     aiRef.current = false;
@@ -825,7 +821,7 @@ export default function App() {
         <nav className="workflow" aria-label="Setup steps">
           {[
             {
-              label: 'Connect camera',
+              label: 'Start Camera',
               done: readiness.camera,
               icon: Camera,
               action: () => focusSetupSection('camera-panel'),
@@ -844,7 +840,7 @@ export default function App() {
                 focusSetupSection('robot-panel'),
             },
             {
-              label: 'Create a rule',
+              label: 'Add Rule',
               done: readiness.rules,
               icon: SlidersHorizontal,
               action: () =>
@@ -861,7 +857,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <p className="setup-guidance" role="status">{readiness.helper}</p>
+        <p className="setup-guidance" role="status">{cameraBusy ? 'Camera connecting. Wait for the preview to appear.' : cameraError || readiness.helper}</p>
         {notice && (
           <div className="notice" role="status">
             <CircleHelp size={17} />
@@ -932,7 +928,7 @@ export default function App() {
                     ) : (
                       <Camera size={17} />
                     )}
-                    Connect camera
+                    Start Camera
                   </button>
                   <button className="demo-link" onClick={startDemo}>
                     Just exploring? Try the demo <ArrowRight size={14} />
@@ -1023,7 +1019,7 @@ export default function App() {
                   </span>
                 ))
               ) : !appearanceVisible && (
-                <span className="muted">{visionCapabilities.boundingBoxes ? 'Detected objects' : 'Class predictions'} will appear here</span>
+                <span className="muted">{detectionEmpty(providerKind, (cameraOn && modelReady) || demo, !!project.customObjects?.length)}</span>
               )}
               {demo && (
                 <button className="text-button" onClick={() => setDemoVisible((v) => !v)}>
@@ -1123,7 +1119,7 @@ export default function App() {
                     <FolderOpen size={16} />
                   </button>}
                 </div>
-                <span role="status">{modelBusy ? 'Loading…' : modelReady ? 'Ready' : modelError ? 'Error' : 'Not loaded'}</span>
+                <span role="status">{modelGuidance(providerKind, modelBusy, modelReady, modelError, tmUrlInput)}</span>
                 {!visionCapabilities.boundingBoxes && modelReady && <small>
                   ✓ Custom classes · ✓ Confidence rules · ✓ Robot actions<br />
                   — Bounding boxes · — Location · — Near / Far
@@ -1209,8 +1205,8 @@ export default function App() {
               <p role="status">{ai ? 'Running · Stop, then Play to test again with the object still visible.' : 'Paused · Press Play rules after making changes. Detection continues while paused.'}</p>
             </div>
             <div className="rules-controls" id="play-controls" tabIndex={-1}>
-              <button className="primary" disabled={ai || !readiness.play} onClick={toggleAI}>
-                <Play size={16} /> Play rules
+              <button className="primary" disabled={ai || !readiness.play} aria-describedby={!readiness.play ? 'play-blocker' : undefined} onClick={toggleAI}>
+                <Play size={16} /> {ai ? 'Running' : 'Play rules'}
               </button>
               <button onClick={stop}><Square size={16} /> Stop rules</button>              <button
                 className="primary"
@@ -1222,10 +1218,12 @@ export default function App() {
               </button>
             </div>
           </div>
+          {!ai && !readiness.play && <p className="setup-guidance" id="play-blocker">Before Play: {cameraError ? 'check the camera message above, then retry Connect.' : readiness.helper.replace(/^Next: /, '').replace(/^Ready! /, '')}</p>}
           {project.rules.map((r, i) => (
             <RuleCard
               key={r.id}
               rule={r}
+              guidance={readiness.ruleProblems[r.id]}
               detections={detections}
               selectedClasses={visionCapabilities.boundingBoxes ? project.selectedClasses : project.selectedClasses.filter(c => availableClasses.includes(c))}
               visionCapabilities={visionCapabilities}
@@ -1252,14 +1250,14 @@ export default function App() {
               <p>Add your first rule to turn a detection into an action.</p>
               <button onClick={() => edit({ ...project, rules: [{ ...makeRule(), className: project.selectedClasses[0], actions: [makeAction(ROBOTS[robotMode].actions[0])] }] })}>
                 <Plus size={16} />
-                Create a rule
+                Add Rule
               </button>
             </div>
           )}
           <div className="tip">
             <Leaf size={16} />
             <span>
-              <b>Start small, think big.</b> Try “if person is detected, turn the beak green.” Then
+              <b>Start small, think big.</b> Choose an object and add one robot action. Then
               make it your own.
             </span>
           </div>
@@ -1394,7 +1392,7 @@ export default function App() {
                     button.
                   </li>
                   <li>
-                    <b>Attach your robot.</b> Select Finch 2 or Hummingbird Bit, connect device A in BlueBird, and test its physical outputs.
+                    <b>Connect your robot.</b> Select Finch 2 or Hummingbird Bit, connect device A in BlueBird, and test its physical outputs.
                   </li>
                   <li>
                     <b>Make a rule.</b> Start with person → beak green. The object must be visible

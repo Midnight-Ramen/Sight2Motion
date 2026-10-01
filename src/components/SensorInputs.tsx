@@ -18,6 +18,6 @@ export function SensorInputs({ configuration, state, onChange }: {
       return <div key={sensor.id}><dt>{sensor.label}</dt><dd>{reading ? reading.kind === 'boolean' ? (reading.value ? 'Pressed' : 'Not pressed') : `${reading.value} ${reading.unit ?? ''}` : 'Unavailable'}</dd></div>;
     })}</dl>
     {configuration.some(sensor => !state[sensor.id]?.reading || performance.now() - state[sensor.id].updatedAt > SENSOR_MAX_AGE) &&
-      <p>Check the sensor connection and selected input type.</p>}
+      <p role="status">Sensor data is unavailable. Check the sensor connection, port, and selected input type.</p>}
   </section>;
 }

@@ -41,6 +41,7 @@ export function ProjectObjects({ selected, supported, rules, detections, thresho
       {objectLabel(name)}{!supported.includes(name) && ' · unavailable in this model'}
       <button aria-label={`Remove ${objectLabel(name)}`} onClick={() => toggle(name)}>×</button>
     </span>)}</div>
+    {!selected.length && <p role="status">{capabilities.boundingBoxes ? 'Choose at least one object for this project.' : supported.length ? 'Choose a class for this project.' : 'Load your Teachable Machine model to see its classes.'}</p>}
     <details className="object-picker">
       <summary>+ Choose objects</summary>
       <label>Search objects<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search this model’s objects" /></label>
