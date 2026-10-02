@@ -21,7 +21,8 @@ it('tracks a named SAM appearance without any detector results', () => {
   const tracker = start();
   expect(tracker.update(frame(), 100, width, height)?.displayName).toBe('My cup');
   const next = tracker.update(frame(6), 200, width, height)!;
-  expect(next.state).toBe('TRACKING'); expect(next.centerX).toBeCloseTo(46, 0);
+  expect(next.state).toBe('TRACKING'); expect(next.centerX).toBeGreaterThan(40); expect(next.centerX).toBeLessThan(46);
+  expect(tracker.update(frame(6), 300, width, height)!.centerX).toBeGreaterThan(next.centerX);
   expect(next.detectorClassId).toBeNull();
 });
 it('mirrors geometry once and preserves target area', () => {
@@ -43,6 +44,13 @@ it('ignores duplicate timestamps and clears on stop', () => {
   tracker.update(frame(6), 100, width, height);
   expect(tracker.capturedAt).toBe(100);
   tracker.stop(); expect(tracker.age()).toBeNull();
+});
+it('reacquires a briefly occluded appearance but rejects a frame after the loss deadline', () => {
+  const tracker = start(); tracker.update(frame(), 100, width, height);
+  expect(tracker.update(frame(0, true), 200, width, height)?.state).toBe('TEMPORARILY_LOST');
+  const reacquired = tracker.update(frame(4), 350, width, height)!;
+  expect(reacquired.state).toBe('TRACKING'); expect(reacquired.lastSeenAt).toBe(350);
+  expect(tracker.update(frame(4), 1200, width, height)?.state).toBe('LOST');
 });
 import { parseProject } from '../src/core/ProjectStorage';
 import { makeProject } from '../src/core/types';

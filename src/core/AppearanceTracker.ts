@@ -4,6 +4,7 @@ import type { TrackedTarget } from './TargetTracker';
 
 type Pixels = Pick<ImageData, 'data' | 'width' | 'height'>;
 type Box = SelectedSegment['boundingBox'];
+export const APPEARANCE_STABILITY = { alpha: .65, acquireConfidence: .72, retainConfidence: .67, ambiguityMargin: .035 };
 /** Fixed appearance template: never learns background after an uncertain match. */
 export class AppearanceTracker {
   readonly lossTimeoutMs = 750;
@@ -52,7 +53,8 @@ export class AppearanceTracker {
     return Math.max(0, 1 - error / weight / 100);
   }
   update(image: Pixels, now: number, outputWidth: number, outputHeight: number) {
-    if (!this.samples.length || now <= this.lastFrame || this.target?.targetLost) return this.age(now);
+    if (!Number.isFinite(now) || !this.samples.length || now <= this.lastFrame || this.target?.targetLost) return this.age(now);
+    if (this.target && now - this.lastSeen >= this.lossTimeoutMs) return this.age(now);
     this.lastFrame = now;
     if (image.width !== this.width || image.height !== this.height) { this.stop(); return null; }
     const b = this.box, radius = Math.max(8, Math.min(24, this.width * .1));
@@ -64,18 +66,23 @@ export class AppearanceTracker {
     candidates.sort((a, b) => b.score - a.score);
     const best = candidates[0];
     const other = candidates.find(c => Math.hypot(c.box.x - best.box.x, c.box.y - best.box.y) > Math.max(5, Math.min(b.width, b.height) * .5));
-    if (best.score < .72 || (other && best.score - other.score < .035)) {
+    if (best.score < (this.target ? APPEARANCE_STABILITY.retainConfidence : APPEARANCE_STABILITY.acquireConfidence) ||
+      (other && best.score - other.score < APPEARANCE_STABILITY.ambiguityMargin)) {
       if (this.target) this.target = { ...this.target, state: 'TEMPORARILY_LOST', trackingConfidence: 0 };
       return this.age(now);
     }
     this.box = best.box; this.lastSeen = now;
     const sx = outputWidth / this.width, sy = outputHeight / this.height;
-    const width = best.box.width * sx, height = best.box.height * sy;
-    const x = displayedX(best.box.x * sx, outputWidth, this.mirror, width), y = best.box.y * sy;
+    const rawWidth = best.box.width * sx, rawHeight = best.box.height * sy;
+    const rawX = displayedX(best.box.x * sx, outputWidth, this.mirror, rawWidth), rawY = best.box.y * sy;
+    const old = this.target?.boundingBox, a = APPEARANCE_STABILITY.alpha;
+    const width = old ? old.width + a * (rawWidth - old.width) : rawWidth;
+    const height = old ? old.height + a * (rawHeight - old.height) : rawHeight;
+    const x = old ? old.x + a * (rawX - old.x) : rawX, y = old ? old.y + a * (rawY - old.y) : rawY;
     const centerX = x + width / 2, centerY = y + height / 2;
     const area = width * height / (outputWidth * outputHeight), error = centerX / outputWidth * 2 - 1;
     this.target = { displayName: this.name, label: this.name, detectorLabel: 'appearance', detectorClassId: null,
-      active: true, state: 'TRACKING', centerX, centerY, boundingBox: { x, y, width, height },
+      active: true, state: 'TRACKING', lastSeenAt: now, centerX, centerY, boundingBox: { x, y, width, height },
       relativeX: centerX / outputWidth, relativeY: centerY / outputHeight, normalizedWidth: width / outputWidth,
       normalizedHeight: height / outputHeight, normalizedArea: area, size: area, errorX: error, horizontalError: error,
       confidence: best.score, trackingConfidence: best.score, lostFrames: 0, targetLost: false };
@@ -84,6 +91,8 @@ export class AppearanceTracker {
   age(now = performance.now()) {
     if (this.target && now - this.lastSeen >= this.lossTimeoutMs)
       this.target = { ...this.target, state: 'LOST', targetLost: true, trackingConfidence: 0 };
+    else if (this.target?.state === 'TRACKING' && now - this.lastSeen > 300)
+      this.target = { ...this.target, state: 'TEMPORARILY_LOST' };
     return this.target;
   }
 }

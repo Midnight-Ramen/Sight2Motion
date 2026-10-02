@@ -10,6 +10,8 @@ Also included: editable action sequences, drag and arrow-button reordering, timi
 
 ## Teacher setup
 
+Recommended browser for network CamS3 use: Google Chrome. Edge showed intermittent local-network stream failures during testing.
+
 1. Install a current Node.js LTS release on your classroom computer.
 2. Open a terminal **in this `Computer Vision + Yolo` folder**, then run:
 

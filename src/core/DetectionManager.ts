@@ -1,5 +1,6 @@
 import { hasBoundingBox, type Rule, type VisionResult, type DetectionRegion, type DetectionDistance } from './types';
 import { matchesDistance, DEFAULT_NEAR_THRESHOLD } from './DetectionDistance';
+import { FOLLOW_STABILITY } from './FollowController';
 export interface DetectionState {
   since: number;
   lastSeen: number;
@@ -21,9 +22,11 @@ export class DetectionManager {
     nearThreshold: number = DEFAULT_NEAR_THRESHOLD,
     graceMs = 0,
   ): DetectionState {
-    const seen = detections.some((d) => d.className === className && d.confidence >= threshold &&
-      (region === 'anywhere' || d.region === region) && matchesDistance(d, distance, nearThreshold));
     const old = this.states.get(key);
+    const retaining = graceMs > 0 && old?.visible && now - old.lastSeen < graceMs;
+    const minimum = retaining ? Math.max(0, threshold - FOLLOW_STABILITY.confidenceMargin) : threshold;
+    const seen = detections.some((d) => d.className === className && d.confidence >= minimum &&
+      (region === 'anywhere' || d.region === region) && matchesDistance(d, distance, nearThreshold));
     const visible = seen || !!(old?.visible && now - old.lastSeen < graceMs);
     const state = {
       visible,
@@ -42,10 +45,10 @@ export class DetectionManager {
 
 
 /** Normalize qualifying boxes once, independently of local/network frame sources. */
-export function followTargets(rule: Rule, detections: VisionResult[], width: number, height: number) {
+export function followTargets(rule: Rule, detections: VisionResult[], width: number, height: number, retaining = false) {
   if (!(width > 0 && height > 0)) return [];
   return detections.filter(hasBoundingBox).filter(d => d.className === rule.className &&
-    d.confidence >= rule.confidence && (rule.region === 'anywhere' || d.region === rule.region) &&
+    d.confidence >= Math.max(0, rule.confidence - (retaining ? FOLLOW_STABILITY.confidenceMargin : 0)) && (rule.region === 'anywhere' || d.region === rule.region) &&
     matchesDistance(d, rule.distance, rule.nearThreshold) &&
     [d.x, d.y, d.width, d.height].every(Number.isFinite) && d.width > 0 && d.height > 0)
     .map(d => ({ x: d.x / width, y: d.y / height, width: d.width / width, height: d.height / height }));

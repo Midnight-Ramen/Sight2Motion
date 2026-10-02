@@ -8,6 +8,7 @@ type Box = SelectedSegment['boundingBox'];
 export type TrackingState = 'IDLE' | 'SAM_SELECTED' | 'MATCHING' | 'TRACKING' | 'TEMPORARILY_LOST' | 'LOST';
 export interface SelectedTarget extends SelectedSegment { selectedAt: number; initialBoundingBox: Box }
 export interface TrackedTarget {
+  lastSeenAt?: number;
   displayName?: string;
   detectorLabel?: string;
   detectorClassId?: number | null;
@@ -18,7 +19,8 @@ export interface TrackedTarget {
   confidence: number; trackingConfidence: number; lostFrames: number; targetLost: boolean;
 }
 export const TRACKING_DEFAULTS = { initialIou: 0.35, alpha: 0.3, lossMs: 750,
-  maxLossMs: 2500, maxCenterJump: 0.12, minSizeSimilarity: 0.4, ambiguityMargin: 0.04 };
+  maxLossMs: 2500, maxCenterJump: 0.12, minSizeSimilarity: 0.4, ambiguityMargin: 0.04,
+  acquireConfidence: 0.35, retainConfidence: 0.25 };
 export function boxIou(a: Box, b: Box) {
   const area = Math.max(0, Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)) *
     Math.max(0, Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
@@ -46,7 +48,7 @@ export class TargetTracker {
     const box={...b,x:displayedX(b.x,segment.width,mirror,b.width)};
     this.selected={...segment, initialBoundingBox:box, selectedAt:now};
     this.state='MATCHING';
-    const match=associateSelection(segment,detections,mirror,this.config.initialIou);
+    const match=associateSelection(segment,detections.filter(d=>d.confidence>=this.config.acquireConfidence),mirror,this.config.initialIou);
     if(!match) { this.state='SAM_SELECTED'; return null; }
     const best={d:match.detection,overlap:match.iou};
     this.selected.detectorLabel=best.d.className;
@@ -59,19 +61,21 @@ export class TargetTracker {
   private makeTarget(boundingBox: Box,label:string,confidence:number,trackingConfidence:number,lostFrames:number,state:TrackingState):TrackedTarget {
     const p=center(boundingBox), normalizedWidth=boundingBox.width/this.width, normalizedHeight=boundingBox.height/this.height;
     const normalizedArea=normalizedWidth*normalizedHeight;
-    return {active:true,state,label,displayName:this.selected?.displayName?.trim() || 'Selected object',detectorLabel:label,
+    return {active:true,state,label,lastSeenAt:this.lastSeen,displayName:this.selected?.displayName?.trim() || 'Selected object',detectorLabel:label,
       detectorClassId:CLASSES.includes(label)?CLASSES.indexOf(label):null,boundingBox,centerX:p.x,centerY:p.y,relativeX:p.x/this.width,relativeY:p.y/this.height,
       normalizedWidth,normalizedHeight,normalizedArea,size:normalizedArea,errorX:p.x-this.width/2,
       horizontalError:(p.x-this.width/2)/(this.width/2),confidence,trackingConfidence,lostFrames,targetLost:state==='LOST'};
   }
   update(detections: VisionResult[], now = performance.now()) {
-    if(!this.target || !this.raw || now<=this.lastUpdate) return this.target;
+    if(!this.target || !this.raw || !Number.isFinite(now) || now<=this.lastUpdate) return this.target;
+    if(this.state==='LOST') return this.target;
     const dt=now-this.lastUpdate;
     this.cadence=0.7*this.cadence+0.3*Math.min(2000,dt); this.lastUpdate=now;
-    const elapsed=now-this.lastSeen, horizon=this.state==='LOST'?0:Math.min(elapsed,this.lossTimeoutMs);
+    if(now-this.lastSeen>=this.lossTimeoutMs) return this.age(now,true);
+    const elapsed=now-this.lastSeen, horizon=Math.min(elapsed,this.lossTimeoutMs);
     const predicted={...this.raw,x:this.raw.x+this.velocity.x*horizon,y:this.raw.y+this.velocity.y*horizon};
     const previousCenter=center(predicted), diagonal=Math.hypot(this.width,this.height);
-    const candidates=detections.filter(hasBoundingBox).filter(d=>d.className===this.target!.label && valid(d)).map(d=>{
+    const candidates=detections.filter(hasBoundingBox).filter(d=>d.className===this.target!.label && valid(d) && d.confidence>=this.config.retainConfidence).map(d=>{
       const p=center(d), distance=Math.hypot(p.x-previousCenter.x,p.y-previousCenter.y)/diagonal;
       const size=Math.min(d.width*d.height,this.raw!.width*this.raw!.height)/Math.max(d.width*d.height,this.raw!.width*this.raw!.height);
       const overlap=boxIou(predicted,d);

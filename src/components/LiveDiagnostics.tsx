@@ -4,16 +4,18 @@ import type { ActionEngine } from '../core/ActionEngine';
 import { SENSOR_MAX_AGE, type SensorState } from '../core/Sensors';
 import { DEFAULT_NEAR_THRESHOLD } from '../core/DetectionDistance';
 import { detectionRegion } from '../core/DetectionRegions';
+import type { NetworkCameraDiagnostics } from '../core/NetworkCameraSource';
 
 interface Props {
   project: Project; detections: VisionResult[]; target: TrackedTarget | null;
   sensors: SensorState; ruleResults: Readonly<Record<string, 'TRUE' | 'FALSE' | 'Waiting'>>;
   follow: ActionEngine['followSnapshot']; camera: boolean; model: boolean; robot: boolean;
   running: boolean; fps: number; demo: boolean; now?: number;
+  networkCamera?: NetworkCameraDiagnostics;
 }
 const percent = (value: number) => Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—';
 export function LiveDiagnostics({ project, detections, target, sensors, ruleResults, follow,
-  camera, model, robot, running, fps, demo, now = performance.now() }: Props) {
+  camera, model, robot, running, fps, demo, networkCamera, now = performance.now() }: Props) {
   const classifier = project.visionProvider === 'teachable-machine';
   const items = [...detections].filter(d => classifier || project.selectedClasses.includes(d.className))
     .sort((a, b) => b.confidence - a.confidence);
@@ -22,6 +24,13 @@ export function LiveDiagnostics({ project, detections, target, sensors, ruleResu
   return <details className="live-diagnostics panel">
     <summary>Live Diagnostics</summary>
     <div className="diagnostics-sections">
+      {project.cameraSource === 'network' && networkCamera && <section aria-label="Network camera diagnostics"><h3>Network Camera</h3>
+        <p>{networkCamera.status}</p>
+        <p>Stream: {networkCamera.stream ?? 'Disconnected'}</p>
+        <p>Last frame: {networkCamera.lastFrameAt === undefined ? 'None yet' : `${Math.max(0, Date.now() - networkCamera.lastFrameAt)} ms ago`}</p>
+        <p>Reconnect attempts: {networkCamera.reconnectAttempts}{networkCamera.reconnectResult ? ` · ${networkCamera.reconnectResult}` : ''}</p>
+        {networkCamera.lastError && <p>Last error: {networkCamera.lastError.category} · {networkCamera.lastError.reason}</p>}
+      </section>}
       {(model || demo) && <section aria-label="Vision diagnostics"><h3>Vision</h3>
         {items.length ? <ul>{items.map((d, i) => <li key={`${d.className}-${i}`}>
           <strong>{d.className}</strong> · {percent(d.confidence)}
@@ -32,12 +41,19 @@ export function LiveDiagnostics({ project, detections, target, sensors, ruleResu
       {(target || !!project.customObjects?.length) && <section aria-label="Selected target diagnostics"><h3>Selected Target</h3>
         <p>Target: {target?.displayName || target?.label || 'Not Selected'}</p>
         <p>Status: {!target ? 'Not Selected' : target.state === 'TRACKING' ? 'Tracking' : target.state === 'TEMPORARILY_LOST' ? 'Temporarily Lost' : target.state === 'LOST' ? 'Lost' : 'Not Selected'}</p>
+        {target?.lastSeenAt !== undefined && <p>Target age: {Math.max(0, Math.round(now - target.lastSeenAt))} ms{target.state === 'TEMPORARILY_LOST' ? ' · Reacquiring' : ''}</p>}
         {target && <><p>Confidence: {percent(target.trackingConfidence)} · Position: {detectionRegion({ x: target.relativeX, width: 0 }, 1).toUpperCase()}</p>
           <p>Size: {percent(target.normalizedArea)} · Center: {percent(target.relativeX)}, {percent(target.relativeY)}</p></>}
       </section>}
       {showFollow && <section aria-label="Follow diagnostics"><h3>Follow</h3>
         <p>Follow: {follow.active ? follow.waiting || follow.selected && target?.state !== 'TRACKING' ? 'Waiting for target' : 'Active' : 'Inactive'}</p>
+        {follow.active && follow.lastSeenAt !== undefined && <p>Target age: {Math.max(0, Math.round(now - follow.lastSeenAt))} ms · {follow.waiting ? 'Reacquiring' : 'Locked'}</p>}
         {follow.active && <><p>Target: {follow.selected ? target?.displayName || target?.label : follow.target}</p>
+          {follow.targetLock && <p>Target lock: {follow.targetLock}</p>}
+          {follow.targetLock === 'Soft start' && <p>Steering ramp: {percent(follow.steeringRamp ?? 1)} · Forward ramp: {percent(follow.forwardRamp ?? 1)}</p>}
+          {follow.steeringScale !== undefined && follow.effectiveCenterTolerance !== undefined && <p>Steering scale: {percent(follow.steeringScale)} · Effective center tolerance: {percent(follow.effectiveCenterTolerance)}</p>}
+          {follow.rawError !== undefined && follow.smoothedError !== undefined && <p>Raw error: {follow.rawError.toFixed(3)} · Smoothed error: {follow.smoothedError.toFixed(3)}</p>}
+          {follow.desired && <p>Desired wheels: L {follow.desired[0]}% · R {follow.desired[1]}%</p>}
           {wheels && <><p>Steering: {wheels[0] === wheels[1] ? 'Straight' : wheels[0] < wheels[1] ? 'Left' : 'Right'}</p>
             <p>Forward speed: {Math.round((wheels[0] + wheels[1]) / 2)}% · Left wheel: {wheels[0]}% · Right wheel: {wheels[1]}%</p></>}
           <small>Last commanded speeds, not measured motion.</small></>}

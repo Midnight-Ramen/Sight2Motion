@@ -27,7 +27,7 @@ it('tolerates gaps, reacquires nearby, loses stale input by elapsed time, never 
  expect(t.update([person(105)],200)!.state).toBe('TRACKING');
  expect(t.age(1000)!.targetLost).toBe(true);
  expect(t.update([person(500)],1100)!.targetLost).toBe(true);
- expect(t.update([person(105)],1200)!.state).toBe('TRACKING');
+ expect(t.update([person(105)],1200)!.state).toBe('LOST'); // Expired lock requires explicit selection.
 });
 it('smoothing and normalized measurements use the displayed orientation once',()=>{
  const raw=person(100); const displayed=orientDetections([raw],640,true);

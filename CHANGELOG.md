@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.0 — Tracking & Follow Stability
+
+- Improved target association and retention, including MobileSAM-selected targets and short-loss reacquisition.
+- Protected motion against stale and duplicate detections; expired locks require fresh acquisition.
+- Smoothed Finch Follow steering with distance hysteresis and 100 ms motor-control interpolation.
+- Added 300 ms target settling, distance-aware steering/tolerance, and alignment-aware forward speed.
+- Added acquisition ramps: 600 ms steering and 500 ms forward, seeded from settling samples.
+- Expanded Live Diagnostics with target freshness, lock state, steering, and wheel-command details.
+- Added network-camera dropout diagnostics and single-client stream recovery; bounded repeated immediate browser fetch failures.
+- Physical Finch acceptance passed at 40% Follow speed; network camera stable in Chrome, confirmed by Jonathan Delgado.
+- Release verification: 291 tests passed, 0 failed; production build passed. Runtime behavior frozen after physical acceptance.
+
 ## v0.6.0 — Guided Student Experience
 
 - Added six editable project templates, including blank projects and custom AI classifiers.

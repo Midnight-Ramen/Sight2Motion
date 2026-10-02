@@ -125,7 +125,7 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
 .more-menu summary { background: var(--surface-raised); color: var(--ink); border-color: var(--line); }
 .modal li b { color: var(--ink); }
 .coral { background: var(--accent-soft); color: var(--accent); }
-.setup-guidance { color: var(--muted); font-size: 14px; margin: -8px 0 18px; }
+.setup-guidance { color: var(--muted); font-size: 14px; margin: -8px 0 18px; min-height: 2.8em; line-height: 1.4; }
 
 .project-bar { flex-wrap: wrap; }
 .project-bar > div:first-child { min-width: 0; max-width: 100%; }

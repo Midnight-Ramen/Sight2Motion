@@ -1,5 +1,6 @@
 import { cameraFailure, modelGuidance, detectionEmpty } from './core/StudentGuidance';
 import { LiveDiagnostics } from './components/LiveDiagnostics';
+import { FOLLOW_STABILITY } from './core/FollowController';
 import type { TrackedTarget } from './core/TargetTracker';
 import { ObjectSelection } from './components/ObjectSelection';
 import { orientDetections } from './core/CameraOrientation';
@@ -72,7 +73,7 @@ import './styles.css';
 import './theme.css';
 import { ProjectTemplatePicker } from './components/ProjectTemplatePicker';
 import { selectProjectTemplate } from './core/ProjectTemplates';
-import { setupReadiness, focusSetupSection } from './core/SetupReadiness';
+import { setupReadiness, focusSetupSection, cameraGuidanceReady } from './core/SetupReadiness';
 const networkCameras = [1, 2, 3, 4].map(number => ({
   name: `Camera ${number}`,
   url: `http://robosight-cam-${String(number).padStart(2, '0')}.local/stream`,
@@ -110,7 +111,7 @@ export default function App() {
   const robotMode = project.robotType;
   const [sensorState, setSensorState] = useState<SensorState>({});
   const sensorRef = useRef<SensorState>({});
-  const latestVision = useRef<{ items: VisionResult[]; updatedAt: number }>({ items: [], updatedAt: -Infinity });
+  const latestVision = useRef<{ items: VisionResult[]; updatedAt: number; capturedAt: number }>({ items: [], updatedAt: -Infinity, capturedAt: -Infinity });
   const [hardwareBusy, setHardwareBusy] = useState(false);
   const [followContainer, setFollowContainer] = useState<HTMLDivElement | null>(null);
   const [finchStatus, setFinchStatus] = useState<FinchStatus>({
@@ -220,17 +221,29 @@ export default function App() {
   const [customTracked, setCustomTracked] = useState<TrackedTarget | null>(null);
   const appearanceVisible = customTracked?.detectorLabel === 'appearance' && customTracked.state === 'TRACKING';
   const [usableFrame, setUsableFrame] = useState(false);
+  const [, setDiagnosticNow] = useState(() => performance.now());
   useEffect(() => {
-    const update = () => setUsableFrame(cameraOn && !!camera.frame);
+    let lastFrameAt = -Infinity, lastFrameVersion = -1;
+    const update = () => {
+      const now = performance.now();
+      if (cameraOn && camera.frame && camera.frameVersion !== lastFrameVersion) {
+        lastFrameVersion = camera.frameVersion;
+        lastFrameAt = now;
+      }
+      setUsableFrame(cameraSource === 'network' ? camera.networkHealthy : cameraGuidanceReady(cameraOn, lastFrameAt, now));
+      if (cameraOn || cameraBusy) setDiagnosticNow(now);
+    };
     update();
     const timer = setInterval(update, 250);
     return () => clearInterval(timer);
-  }, [camera, cameraOn]);
+  }, [camera, cameraOn, cameraSource, cameraBusy]);
   const readiness = setupReadiness(project, {
     usableFrame: cameraOn && usableFrame, modelReady, classes: availableClasses,
     connected, hardwareBusy, running: ai, demo,
     trackedName: customTracked?.state === 'TRACKING' ? customTracked.displayName : undefined,
   });
+  const setupGuidance = cameraBusy ? 'Camera connecting. Wait for the preview to appear.' :
+    cameraError || (cameraOn && !usableFrame ? 'Camera frames are unavailable. Reconnect your camera.' : readiness.helper);
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
     setNotice('Changes ready. Press Play rules to run your updated actions.');
@@ -289,7 +302,7 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
   const evaluateInputs = useCallback(
-    (items: VisionResult[]) => {
+    (items: VisionResult[], capturedAt = performance.now()) => {
       if (
         !aiRef.current ||
         !robot.connected
@@ -299,7 +312,7 @@ export default function App() {
       const triggered = rules.evaluate(p.rules, items, performance.now(), capabilitiesFor(p.visionProvider),
         { state: sensorRef.current, configuration: p.sensorConfiguration ?? [], available: p.robotType === 'hummingbird' && hummingbird.connected });
       const wasBusy = actions.busy;
-      void actions.updateRules(triggered, rules.activeRules, { detections: items, width: camera.width || (demo ? 1280 : 0), height: camera.height || (demo ? 720 : 0) });
+      void actions.updateRules(triggered, rules.activeRules, { detections: items, capturedAt, width: camera.width || (demo ? 1280 : 0), height: camera.height || (demo ? 720 : 0) });
       if (wasBusy) return;
       if (triggered.length) {
         triggered.forEach((r) => log(`Running “${r.name}”`));
@@ -308,10 +321,10 @@ export default function App() {
     },
     [actions, robot, rules, log, hummingbird, camera, demo],
   );
-  const consume = useCallback((items: VisionResult[]) => {
+  const consume = useCallback((items: VisionResult[], capturedAt = performance.now()) => {
     setDetections(items);
-    latestVision.current = { items, updatedAt: performance.now() };
-    evaluateInputs(items);
+    latestVision.current = { items, updatedAt: performance.now(), capturedAt };
+    evaluateInputs(items, capturedAt);
   }, [evaluateInputs]);
   useEffect(() => {
     sensorRef.current = {};
@@ -326,7 +339,7 @@ export default function App() {
       setSensorState({ ...sensorRef.current });
       if (!projectRef.current.rules.some(r => r.sensorConditions?.length)) return;
       const vision = latestVision.current;
-      evaluateInputs(performance.now() - vision.updatedAt <= 1500 ? vision.items : []);
+      evaluateInputs(performance.now() - vision.updatedAt <= 1500 ? vision.items : [], vision.capturedAt);
     }, 100);
     const stopSensors = () => hummingbird.sensors.stop();
     window.addEventListener('pagehide', stopSensors);
@@ -336,6 +349,7 @@ export default function App() {
     const version = ++loopVersion.current;
     let timer: ReturnType<typeof setTimeout>;
     let oldClasses = '';
+    let lastFrameVersion = -1;
     const tick = async () => {
       const started = performance.now();
       if (document.hidden) {
@@ -344,6 +358,7 @@ export default function App() {
       }
       try {
         let items: VisionResult[] = [];
+        let capturedAt = started;
         if (demo)
           items =
             demoVisible && projectRef.current.vision.confidence <= 0.94 ? [demoDetection] : [];
@@ -352,8 +367,17 @@ export default function App() {
           if (version !== loopVersion.current) return;
           const frame = camera.frame;
           if (!frame) { timer = setTimeout(tick, 100); return; }
+          const frameVersion = camera.frameVersion;
+          if (frameVersion === lastFrameVersion) { timer = setTimeout(tick, 100); return; }
+          lastFrameVersion = frameVersion;
+          capturedAt = performance.now();
+          // Keep the retention band available to an existing Follow lock only.
+          const p = projectRef.current;
+          const followRule = p.robotType === 'finch' && aiRef.current
+            ? p.rules.find(r => r.id === actions.activeMotorOwnerRuleId && r.actions.some(a => a.enabled && a.kind === 'move' && a.mode === 'follow')) : undefined;
+          const threshold = followRule ? Math.min(p.vision.confidence, Math.max(0, followRule.confidence - FOLLOW_STABILITY.confidenceMargin)) : p.vision.confidence;
           const work = vision
-            .detect(frame, projectRef.current.vision.confidence)
+            .detect(frame, threshold)
             .then((result) => {
               items = result;
             });
@@ -373,7 +397,7 @@ export default function App() {
           demo ? 1280 : camera.width || 1280,
           demo ? 720 : camera.height || 720) }));
         }
-        consume(items);
+        consume(items, capturedAt);
         const qualifying = items.filter(d => d.confidence >= projectRef.current.vision.confidence);
         const classes = [...new Set(qualifying.map((d) => d.className))].sort().join(',');
         if (classes && classes !== oldClasses)
@@ -409,7 +433,7 @@ export default function App() {
       ++loopVersion.current;
       clearTimeout(timer);
     };
-  }, [demo, demoVisible, cameraOn, modelReady, consume, vision, pause, log, mirrorHorizontal]);
+  }, [demo, demoVisible, cameraOn, modelReady, consume, vision, pause, log, mirrorHorizontal, actions]);
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
@@ -458,11 +482,18 @@ export default function App() {
       if (attempt !== cameraAttempt.current) return;
       ++loopVersion.current;
       setCameraOn(false); pause(); consume([]);
-      setCameraError('Camera stream stopped. Check its power and connection, then press Connect to retry.');
+      if (source === 'network') {
+        const warning = camera.networkDiagnostics.browserWarning;
+        cameraConnecting.current = !warning; setCameraBusy(!warning);
+        setCameraError(warning ?? 'Camera stream stopped. Reconnecting. Rules remain paused.');
+      } else setCameraError('Camera stream stopped. Check its power and connection, then press Connect to retry.');
     };
     try {
       if (source === 'network') {
-        await camera.connectNetwork(networkImage.current!, project.networkCameraUrl ?? defaultNetworkCameraUrl, ended);
+        await camera.connectNetwork(networkImage.current!, project.networkCameraUrl ?? defaultNetworkCameraUrl, ended, () => {
+          if (attempt !== cameraAttempt.current) return;
+          cameraConnecting.current = false; setCameraBusy(false); setCameraError(''); setCameraOn(true);
+        });
       } else {
         const list = await camera.connect(video.current!, device);
         if (attempt !== cameraAttempt.current) return;
@@ -470,15 +501,16 @@ export default function App() {
         camera.onEnded(ended);
       }
       if (attempt !== cameraAttempt.current) return;
-      setCameraOn(true);
+      if (source !== 'network') setCameraOn(true);
       log('Camera connected. Frames are processed in this browser.');
     } catch (error) {
       if (attempt !== cameraAttempt.current) return;
       console.warn('Camera connection failed:', error);
+      cameraConnecting.current = false; setCameraBusy(false);
       setCameraOn(false);
-      setCameraError(cameraFailure(source === 'network', error));
+      setCameraError((source === 'network' && camera.networkDiagnostics.browserWarning) || cameraFailure(source === 'network', error));
     } finally {
-      if (attempt === cameraAttempt.current) { cameraConnecting.current = false; setCameraBusy(false); }
+      if (attempt === cameraAttempt.current && source !== 'network') { cameraConnecting.current = false; setCameraBusy(false); }
     }
   }
   function disconnectCamera() {
@@ -858,7 +890,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <p className="setup-guidance" role="status">{cameraBusy ? 'Camera connecting. Wait for the preview to appear.' : cameraError || readiness.helper}</p>
+        <p className="setup-guidance" role="status">{setupGuidance}</p>
         {notice && (
           <div className="notice" role="status">
             <CircleHelp size={17} />
@@ -901,7 +933,7 @@ export default function App() {
                 </label>
                 <label>Stream URL<input aria-label="Stream URL" type="url" placeholder="http://your-camera.local/stream" value={project.networkCameraUrl ?? defaultNetworkCameraUrl}
                   onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }} /></label>
-                {cameraOn ? <button onClick={disconnectCamera}>Disconnect</button> :
+                {cameraOn || cameraBusy ? <button onClick={disconnectCamera}>Disconnect</button> :
                   <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
               </>}
             </div>
@@ -954,7 +986,7 @@ export default function App() {
                 </div>
               )}
               <canvas ref={canvas} />
-              <ObjectSelection key={[project.id, cameraSource, cameraOn, demo, mirrorHorizontal].join('-')} camera={camera} available={cameraOn && !demo} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.updatedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
+              <ObjectSelection key={[project.id, cameraSource, cameraOn, demo, mirrorHorizontal].join('-')} camera={camera} available={cameraOn && !demo} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.capturedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
                 controlsContainer={followContainer}
                 savedNames={project.customObjects} onTracking={setCustomTracked}
                 onSaveName={name => { setProject(current => ({ ...current, customObjects: [...new Set([...(current.customObjects ?? []), name])].slice(0, 10) })); setDirty(true); }} follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
@@ -1196,7 +1228,7 @@ export default function App() {
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
           </aside>
         </div>
-        <LiveDiagnostics project={project} detections={detections} target={customTracked} sensors={sensorState}
+        <LiveDiagnostics project={project} detections={detections} target={customTracked} sensors={sensorState} networkCamera={camera.networkDiagnostics}
           ruleResults={rules.diagnostics} follow={actions.followSnapshot} camera={cameraOn && usableFrame}
           model={modelReady} robot={connected} running={ai} fps={measuredFps} demo={demo} />
         <section id="rules" className="rules-section" tabIndex={-1}>
@@ -1222,7 +1254,8 @@ export default function App() {
               </button>
             </div>
           </div>
-          {!ai && !readiness.play && <p className="setup-guidance" id="play-blocker">Before Play: {cameraError ? 'check the camera message above, then retry Connect.' : readiness.helper.replace(/^Next: /, '').replace(/^Ready! /, '')}</p>}
+          <p className="setup-guidance" id="play-blocker" aria-live="polite">{!ai && !readiness.play
+            ? `Before Play: ${setupGuidance.replace(/^Next: /, '').replace(/^Ready! /, '')}` : '\u00a0'}</p>
           {project.rules.map((r, i) => (
             <RuleCard
               key={r.id}

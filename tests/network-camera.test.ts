@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CameraManager } from '../src/core/CameraManager';
-import { MjpegFrames, NetworkCameraSource } from '../src/core/NetworkCameraSource';
+import { MjpegFrames, NetworkCameraSource, networkCameraFailureCategory } from '../src/core/NetworkCameraSource';
 import { makeProject } from '../src/core/types';
 import { parseProject, ProjectStorage } from '../src/core/ProjectStorage';
 
@@ -10,6 +10,8 @@ let aborted: boolean;
 const image = () => ({ naturalWidth:640, naturalHeight:480, src:'', decode:vi.fn().mockResolvedValue(undefined), removeAttribute:vi.fn() }) as unknown as HTMLImageElement;
 const flush = async () => { for(let i=0;i<15;i++) await Promise.resolve(); };
 beforeEach(() => {
+  vi.spyOn(console, 'info').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   aborted = false;
   vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:test');
   vi.spyOn(URL,'revokeObjectURL').mockImplementation(() => {});
@@ -69,8 +71,11 @@ it('does not provide frames before decode and disconnect stops processing', asyn
 it('stalled stream stops frames and reports loss', async () => {
   vi.useFakeTimers(); const ended=vi.fn(); const source=new NetworkCameraSource(image());
   const connected=source.connect('http://camera/stream',ended); await flush(); stream.enqueue(part); await connected;
-  await vi.advanceTimersByTimeAsync(5100);
+  await vi.advanceTimersByTimeAsync(2000);
   expect(source.frame).toBeNull(); expect(ended).toHaveBeenCalledOnce();
+  expect(source.diagnostics.lastError?.category).toBe('MJPEG stream stalled');
+  expect(source.diagnostics.status).toBe('Error');
+  source.stop();
 });
 it('switching releases each source and preserves normal laptop constraints', async () => {
   const stop=vi.fn(); const track={stop,addEventListener:vi.fn()};
@@ -106,10 +111,59 @@ it('EOF clears the frame and reports disconnect', async () => {
   const source=new NetworkCameraSource(image()); const ended=vi.fn();
   const connected=source.connect('http://camera/stream',ended); await flush(); stream.enqueue(part); await connected;
   stream.close(); await flush(); expect(source.frame).toBeNull(); expect(ended).toHaveBeenCalledOnce();
+  source.stop();
 });
 it('stopping an old stream cannot clear a new image after its async cleanup', async () => {
   const img=image(); const old=new NetworkCameraSource(img);
   const connected=old.connect('http://camera/stream',vi.fn()); await flush(); stream.enqueue(part); await connected;
   old.stop(); img.src='blob:new'; vi.mocked(img.removeAttribute).mockClear();
   await flush(); expect(img.removeAttribute).not.toHaveBeenCalled(); expect(img.src).toBe('blob:new');
+});
+
+it('retains frame evidence across failed and successful automatic reconnects without probes', async () => {
+  vi.useFakeTimers();
+  const manager = new CameraManager(), img = image(), ended = vi.fn();
+  const first = manager.connectNetwork(img, 'http://camera/stream', ended);
+  await flush(); stream.enqueue(part); await first;
+  const timestamp = manager.networkDiagnostics.lastFrameAt;
+  stream.close(); await flush();
+  vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(manager.networkDiagnostics).toMatchObject({lastFrameAt:timestamp,reconnectAttempts:1,reconnectResult:'failure'});
+  await vi.advanceTimersByTimeAsync(2000);
+  stream.enqueue(part); await flush();
+  expect(manager.networkDiagnostics).toMatchObject({status:'Connected',reconnectAttempts:0,reconnectResult:'success',frames:2});
+  expect(fetch).toHaveBeenCalledTimes(3);
+  manager.stop(); manager.stop(); await flush();
+  expect(vi.mocked(console.info).mock.calls.filter(([event]) => event === '[Network Camera] manual disconnect')).toHaveLength(1);
+  expect(manager.networkDiagnostics.status).toBe('Disconnected');
+});
+it('preserves exact decode errors and returns isolated diagnostics', async () => {
+  const error = new Error('Decoder rejected JPEG bytes');
+  const img = image(); vi.mocked(img.decode).mockRejectedValue(error);
+  const source = new NetworkCameraSource(img);
+  const pending = source.connect('http://camera/stream',vi.fn());
+  const failed = expect(pending).rejects.toThrow('Camera connection stopped');
+  await flush(); stream.enqueue(part); await flush();
+  expect(source.diagnostics.lastError).toMatchObject({category:'image decode/client failure',reason:'Error: Decoder rejected JPEG bytes',phase:'decode'});
+  expect(console.warn).toHaveBeenCalledWith('[Network Camera] stream error',expect.objectContaining({timestamp:expect.any(String)}),error);
+  source.diagnostics.lastError!.reason = 'changed';
+  expect(source.diagnostics.lastError?.reason).toContain('Decoder rejected');
+  source.stop(); await failed;
+});
+it('does not label opaque browser failures as proven DNS or network failures', () => {
+  expect(networkCameraFailureCategory(new TypeError('Failed to fetch'),'request',false)).toContain('unresolved');
+  expect(networkCameraFailureCategory(new Error('ERR_NAME_NOT_RESOLVED'),'request',false)).toBe('hostname/mDNS failure');
+  expect(networkCameraFailureCategory(new Error('ENETUNREACH'),'request',false)).toBe('network unreachable');
+});
+it('records every decoded frame but throttles successful-frame console messages', async () => {
+  vi.useFakeTimers();
+  const source = new NetworkCameraSource(image());
+  const pending = source.connect('http://camera/stream',vi.fn());
+  await flush(); stream.enqueue(part); await pending;
+  await vi.advanceTimersByTimeAsync(1000); stream.enqueue(part); await flush();
+  expect(source.diagnostics.frames).toBe(2);
+  expect(source.diagnostics.lastFrameAt).toBe(Date.now());
+  expect(vi.mocked(console.info).mock.calls.filter(([event]) => event === '[Network Camera] frame received')).toHaveLength(1);
+  source.stop(); await flush();
 });

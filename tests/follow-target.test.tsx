@@ -20,7 +20,7 @@ it('drives centered targets equally and honors center tolerance',()=>{
   expect(followWheels(box(0.56),action)[0]).toBe(followWheels(box(0.56),action)[1]);
 });
 it('steers progressively left and right, allowing a pivot within the speed cap',()=>{
-  const slight=followWheels(box(0.4),action), far=followWheels(box(0.1),action),right=followWheels(box(0.9),action);
+  const slight=followWheels(box(0.35),action), far=followWheels(box(0.1),action),right=followWheels(box(0.9),action);
   expect(slight[0]).toBeLessThan(slight[1]); expect(far[1]-far[0]).toBeGreaterThan(slight[1]-slight[0]);
   expect(right).toEqual([far[1],far[0]]); expect(far[0]).toBe(0);
   expect([...slight,...far,...right].every(v=>Math.abs(v)<=35)).toBe(true);
@@ -34,7 +34,7 @@ it('provides strong steering at 25 percent even near the close follow distance',
   const settings={...action,followSpeed:25,steeringSensitivity:90,centerDeadZone:0.08,followDistance:'close' as const};
   for(const area of [0.04,0.20,0.23]) {
     const left=followWheels(box(0.25,area),settings);
-    expect(left[0]).toBe(0); expect(left[1]).toBeGreaterThan(10); expect(left[1]).toBeLessThanOrEqual(25);
+    expect(left[0]).toBeLessThan(left[1]); expect(left[1]).toBeGreaterThan(10); expect(left[1]).toBeLessThanOrEqual(25);
     expect(followWheels(box(0.75,area),settings)).toEqual([left[1],left[0]]);
   }
   expect(followWheels(box(0.25),{...settings,followSpeed:0})).toEqual([0,0]);
@@ -42,6 +42,7 @@ it('provides strong steering at 25 percent even near the close follow distance',
 it('keeps steering through the distance hold and stops on target loss',async()=>{
   vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined),lost=vi.fn();
   const c=new FollowController({...action,followSpeed:25},send,lost,vi.fn());
+  await c.update([box(0.25,0.14)]); await vi.advanceTimersByTimeAsync(300); await c.update([box(0.25,0.14)]); await vi.advanceTimersByTimeAsync(100);
   for(const area of [0.14,0.12,0.125]) {
     await c.update([box(0.25,area)]);
     const [left,right]=send.mock.calls.at(-1)!;
@@ -100,7 +101,7 @@ it('lost-target timer stops owned wheels, then permits reacquisition',async()=>{
   const frame={detections:[detection()],width:640,height:480};
   await engine.updateRules([r],[r],frame); await vi.advanceTimersByTimeAsync(750);
   expect(robot.state.left).toBe(0); expect(engine.activeMotorOwnerRuleId).toBeNull();
-  await engine.updateRules([r],[r],frame); expect(robot.state.left).toBeGreaterThan(0); await engine.stop();
+  await engine.updateRules([r],[r],frame); expect(robot.state.left).toBe(0); await vi.advanceTimersByTimeAsync(300); await engine.updateRules([], [r], frame); await vi.advanceTimersByTimeAsync(100); expect(robot.state.left).toBeGreaterThan(0); await engine.stop();
 });
 it('persists Follow settings and retains legacy timed defaults',()=>{
   const p={...makeProject(),rules:[{...rule(),actions:[{...action,followSpeed:20}]}]};
@@ -118,18 +119,18 @@ it('classification providers cannot activate Follow and the editor disables it',
 it('holds still through distance-boundary jitter and resumes after a clear retreat', async()=>{
   vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined);
   const c=new FollowController(action,send,vi.fn(),vi.fn());
-  await c.update([box(0.5,0.08)]); expect(send.mock.calls.at(-1)![0]).toBeGreaterThan(0);
+  await c.update([box(0.5,0.08)]); await vi.advanceTimersByTimeAsync(300); await c.update([box(0.5,0.08)]); await vi.advanceTimersByTimeAsync(100); expect(send.mock.calls.at(-1)![0]).toBeGreaterThan(0);
   await c.update([box(0.5,0.126)]); expect(send.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);
   const count=send.mock.calls.length;
   for(const area of [0.121,0.127,0.12,0.124]) await c.update([box(0.5,area)]);
   expect(send).toHaveBeenCalledTimes(count);
-  await c.update([box(0.5,0.07)]); expect(send.mock.calls.at(-1)![0]).toBeGreaterThan(0); c.cancel();
+  await c.update([box(0.5,0.07)]); await vi.advanceTimersByTimeAsync(100); expect(send.mock.calls.at(-1)![0]).toBeGreaterThan(0); c.cancel();
 });
-it('uses fresh horizontal feedback to stop turning as soon as the target centers', async()=>{
+it('uses fresh horizontal feedback to settle straight when the target centers', async()=>{
   vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined);
   const c=new FollowController(action,send,vi.fn(),vi.fn()); await c.update([box()]);
-  await c.update([box(0.1)]); const first=send.mock.calls.at(-1)!.slice(0,2);
+  await vi.advanceTimersByTimeAsync(300); await c.update([box(0.1)]); await vi.advanceTimersByTimeAsync(400); const first=send.mock.calls.at(-1)!.slice(0,2);
   expect(first[0]).toBeLessThan(first[1]);
-  await c.update([box()]); const centered=send.mock.calls.at(-1)!.slice(0,2);
+  await c.update([box()]); await vi.advanceTimersByTimeAsync(600); const centered=send.mock.calls.at(-1)!.slice(0,2);
   expect(centered[0]).toBe(centered[1]); c.cancel();
 });

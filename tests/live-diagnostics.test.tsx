@@ -66,3 +66,13 @@ it('diagnostic rendering introduces no polling or runtime evaluation', () => {
   const source = readFileSync('src/components/LiveDiagnostics.tsx','utf8');
   for (const forbidden of ['setInterval(', 'setTimeout(', '.evaluate(', '.predict(', '.update(', 'useEffect(']) expect(source).not.toContain(forbidden);
 });
+
+it('shows network frame age and reconnect evidence only for a network camera', () => {
+  const time = vi.spyOn(Date, 'now').mockReturnValue(1000);
+  const networkCamera = {url:'http://camera/stream',status:'Connected' as const,stream:'Healthy' as const,phase:'read' as const,attempt:2,reconnectAttempts:1,frames:3,lastFrameAt:760};
+  const html = renderToStaticMarkup(<LiveDiagnostics {...base} project={{...base.project,cameraSource:'network'}} networkCamera={networkCamera}/>);
+  expect(html).toContain('240 ms ago'); expect(html).toContain('Reconnect attempts: 1');
+  expect(html).toContain('Stream: Healthy');
+  expect(renderToStaticMarkup(<LiveDiagnostics {...base} networkCamera={networkCamera}/>)).not.toContain('Network camera diagnostics');
+  time.mockRestore();
+});

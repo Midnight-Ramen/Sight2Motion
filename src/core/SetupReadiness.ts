@@ -2,6 +2,11 @@ import type { Project, Rule } from './types';
 import { parseProject } from './ProjectStorage';
 import { capabilitiesFor, compatibleRule } from './VisionCapabilities';
 import { portsFor, ROBOTS } from './RobotCapabilities';
+export const CAMERA_GUIDANCE_GRACE_MS = 1500;
+/** Guidance tolerance only. Motor safety continues to use its own shorter watchdog. */
+export function cameraGuidanceReady(connected: boolean, lastFrameAt: number, now: number) {
+  return connected && Number.isFinite(lastFrameAt) && now >= lastFrameAt && now - lastFrameAt < CAMERA_GUIDANCE_GRACE_MS;
+}
 
 export interface SetupState {
   usableFrame: boolean; modelReady: boolean; classes: readonly string[];

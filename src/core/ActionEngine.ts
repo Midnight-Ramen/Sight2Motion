@@ -86,7 +86,7 @@ export class ActionEngine {
     }
   }
   /** Feed every detection evaluation, including while a normal sequence is busy. */
-  async updateRules(triggered: Rule[], active: Rule[], frame?: { detections: VisionResult[]; width: number; height: number }): Promise<boolean> {
+  async updateRules(triggered: Rule[], active: Rule[], frame?: { detections: VisionResult[]; width: number; height: number; capturedAt?: number }): Promise<boolean> {
     ++this.selectedStart;
     if (this.selectedFollow) {
       const revision = this.revision;
@@ -94,7 +94,7 @@ export class ActionEngine {
       if (revision !== this.revision) return false;
     }
     const frameRevision = ++this.frameRevision;
-    const capturedAt = performance.now();
+    const capturedAt = frame?.capturedAt ?? performance.now();
     this.visionFrame = frame ? { ...frame, capturedAt } : undefined;
     this.currentRules = active;
     const result = await this.applyRules(triggered, active);
@@ -102,7 +102,7 @@ export class ActionEngine {
     const follow = this.follow;
     const rule = active.find(r => r.id === follow?.ruleId);
     if (frame && follow && rule && this.outputOwners.get('wheels') === rule.id)
-      await follow.controller.update(followTargets(rule, frame.detections, frame.width, frame.height), capturedAt);
+      await follow.controller.update(followTargets(rule, frame.detections, frame.width, frame.height, !!follow.controller.target), capturedAt);
     return result;
   }
   private async applyRules(triggered: Rule[], active: Rule[]): Promise<boolean> {

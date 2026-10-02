@@ -1,4 +1,4 @@
-import { NetworkCameraSource } from './NetworkCameraSource';
+import { NetworkCameraSource, createNetworkCameraDiagnostics, networkCameraUrl } from './NetworkCameraSource';
 import type { CameraFrame } from './VisionProvider';
 
 export class LocalCameraSource {
@@ -65,6 +65,11 @@ export class CameraManager {
   }
   private local = new LocalCameraSource();
   private network?: NetworkCameraSource;
+  private networkStats = createNetworkCameraDiagnostics();
+  get networkDiagnostics() {
+    return { ...this.networkStats, lastError: this.networkStats.lastError ? { ...this.networkStats.lastError } : undefined };
+  }
+  get networkHealthy() { return this.network?.healthy ?? false; }
   private generation = 0;
   get frame(): CameraFrame | null { return this.network ? this.network.frame : this.local.frame; }
   get frameVersion() { return this.network ? this.network.frameVersion : this.local.frameVersion; }
@@ -73,23 +78,26 @@ export class CameraManager {
   connect(video: HTMLVideoElement, deviceId?: string) {
     if (this.connecting?.source === video && this.connecting.key === (deviceId ?? ''))
       return this.connecting.promise as Promise<MediaDeviceInfo[]>;
-    this.stop();
+    this.stop('replacement');
     return this.trackConnection(video, deviceId ?? '', this.local.connect(video, deviceId));
   }
-  connectNetwork(image: HTMLImageElement, url: string, ended: () => void) {
+  connectNetwork(image: HTMLImageElement, url: string, ended: () => void, recovered?: () => void) {
     if (this.connecting?.source === image && this.connecting.key === url)
       return this.connecting.promise as Promise<void>;
-    this.stop();
+    this.stop('replacement');
     const generation = this.generation;
-    this.network = new NetworkCameraSource(image);
-    return this.trackConnection(image, url, this.network.connect(url, () => { if (generation === this.generation) ended(); }));
+    if (this.networkStats.url !== networkCameraUrl(url)) this.networkStats = createNetworkCameraDiagnostics();
+    this.network = new NetworkCameraSource(image, this.networkStats);
+    return this.trackConnection(image, url, this.network.connect(url,
+      () => { if (generation === this.generation) ended(); },
+      () => { if (generation === this.generation) recovered?.(); }));
   }
   onEnded(callback: () => void) { this.local.onEnded(callback); }
-  stop() {
+  stop(reason: 'manual' | 'replacement' = 'manual') {
     this.connecting = undefined;
     ++this.generation;
     this.local.stop();
-    this.network?.stop();
+    this.network?.stop(reason);
     this.network = undefined;
   }
 }

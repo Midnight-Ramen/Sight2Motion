@@ -26,6 +26,7 @@ it('brakes on approach to center at slow camera cadence without reversing the co
   expect(left).toBe(right); // Closing fast: brake before crossing the center.
   await vi.advanceTimersByTimeAsync(370);
   await c.updateTracked(target(0.02),performance.now(),1000,settings);
+  await vi.advanceTimersByTimeAsync(500);
   expect(send.mock.calls.at(-1)!.slice(0,2)).toEqual([30,30]); c.cancel();
 });
 it('holds the center through small edge jitter, then releases for a clear departure',async()=>{
@@ -33,20 +34,23 @@ it('holds the center through small edge jitter, then releases for a clear depart
   const c=new FollowController(makeAction('move'),send,vi.fn(),vi.fn());
   for(const error of [0,0.11,-0.12,0.12]) {
     await c.updateTracked(target(error),performance.now(),1000,settings);
-    expect(send.mock.calls.at(-1)!.slice(0,2)).toEqual([30,30]);
+    expect(send.mock.calls.at(-1)![0]).toBe(send.mock.calls.at(-1)![1]);
     await vi.advanceTimersByTimeAsync(370);
   }
   await c.updateTracked(target(0.3),performance.now(),1000,settings);
+  await vi.advanceTimersByTimeAsync(100);
   const [left,right]=send.mock.calls.at(-1)!; expect(left).toBeGreaterThan(right); c.cancel();
 });
-it('expires a stale turn before target-loss timeout and duplicate samples cannot extend it',async()=>{
+it('keeps interpolating a valid turn until target-loss timeout; duplicate samples cannot extend it',async()=>{
   vi.useFakeTimers(); const send=vi.fn().mockResolvedValue(undefined),lost=vi.fn();
   const c=new FollowController(makeAction('move'),send,lost,vi.fn());
+  await c.updateTracked(target(-0.5,0.15),performance.now(),1000,settings); await vi.advanceTimersByTimeAsync(300);
+  await c.updateTracked(target(-0.5,0.15),performance.now(),1000,settings); await vi.advanceTimersByTimeAsync(100);
   const at=performance.now(); await c.updateTracked(target(-0.5,0.15),at,1000,settings);
-  expect(send.mock.calls.at(-1)!.slice(0,2)).toEqual([0,10]);
+  expect(send.mock.calls.at(-1)!.slice(0,2)).toEqual([0,4]);
   await vi.advanceTimersByTimeAsync(200); await c.updateTracked(target(-0.5,0.15),at,1000,settings);
   await vi.advanceTimersByTimeAsync(50);
-  expect(send.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]); expect(lost).not.toHaveBeenCalled();
+  expect(send.mock.calls.at(-1)![1]).toBeGreaterThan(4); expect(lost).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(750); expect(lost).toHaveBeenCalledOnce();
 });
 it('delivers the newest braking command after an in-flight write rather than dropping it',async()=>{
@@ -68,6 +72,7 @@ it('cancellation discards queued commands and the steering timer',async()=>{
   await c.updateTracked(target(0.5),performance.now(),1000,settings);
   c.cancel(); release(); await pending; await vi.advanceTimersByTimeAsync(1500);
   expect(send).toHaveBeenCalledOnce(); expect(send.mock.calls[0][2].aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
 });
 it('does not abruptly change wheel speed when entering the outer steering range',()=>{
   const inside=trackedFollowCommand(target(0.65),settings),outside=trackedFollowCommand(target(0.651),settings);
@@ -88,7 +93,7 @@ it('drives equally inside the dead zone, curves progressively, and only stops th
 });
 it('stops centered at distance, makes small off-center corrections, and stops both wheels when too close',()=>{
   expect(trackedFollowCommand(target(0,0.15),settings)).toMatchObject({left:0,right:0});
-  expect(trackedFollowCommand(target(-0.5,0.15),settings)).toMatchObject({left:0,right:10});
+  expect(trackedFollowCommand(target(-0.5,0.15),settings)).toMatchObject({left:0,right:9});
   expect(trackedFollowCommand(target(-0.9,0.23),settings)).toMatchObject({left:0,right:0});
   expect(trackedFollowCommand(target(0.5),{...settings,maxSpeed:0})).toMatchObject({left:0,right:0});
 });
@@ -104,7 +109,8 @@ it('does not renew the watchdog for duplicate samples, temporary loss, or unreli
   const c=new FollowController(makeAction('move'),send,lost,vi.fn());
   await c.updateTracked(target(),performance.now(),1000,settings);
   await vi.advanceTimersByTimeAsync(370);
-  await c.updateTracked(target(),0,1000,settings); expect(send).toHaveBeenCalledOnce();
+  const count=send.mock.calls.length;
+  await c.updateTracked(target(),0,1000,settings); expect(send).toHaveBeenCalledTimes(count);
   await c.updateTracked({...target(),state:'TEMPORARILY_LOST'},performance.now(),1000,settings);
   await vi.advanceTimersByTimeAsync(370);
   await c.updateTracked({...target(),trackingConfidence:0.1},performance.now(),1000,settings);
@@ -114,7 +120,9 @@ it('holds safe commands at 2.7 FPS without resending and stops on explicit targe
   vi.useFakeTimers(); const robot=new Wheels(); await robot.connect(); const engine=new ActionEngine(robot);
   await engine.startSelectedFollow(target(),performance.now(),1000,settings);
   for(let i=0;i<4;i++) { await vi.advanceTimersByTimeAsync(370); await engine.updateSelectedTarget(target(),performance.now(),1000,settings); }
-  expect(robot.setWheelSpeeds).toHaveBeenCalledOnce(); expect(robot.state.left).toBe(30);
+  expect(robot.state.left).toBe(30);
+  const count=robot.setWheelSpeeds.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(200); expect(robot.setWheelSpeeds).toHaveBeenCalledTimes(count);
   await engine.updateSelectedTarget({...target(),targetLost:true,state:'LOST'},performance.now(),1000,settings);
   expect(robot.state.left).toBe(0); expect(engine.followingSelectedTarget).toBe(false);
   await engine.updateSelectedTarget(target(),performance.now(),1000,settings); expect(robot.state.left).toBe(0);
