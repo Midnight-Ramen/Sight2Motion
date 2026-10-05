@@ -1,0 +1,70 @@
+import { chromium, expect } from '@playwright/test';
+import { mkdir, readFile } from 'node:fs/promises';
+
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+const paths = [], errors = [];
+let distance = '37';
+page.on('pageerror', error => errors.push(error.message));
+// No requests from this test reach physical hardware.
+await page.route('http://127.0.0.1:30061/**', route => {
+  const path = new URL(route.request().url()).pathname;
+  paths.push(path);
+  return route.fulfill({ body: path.includes('/Distance/') ? distance : path.includes('/Line/') ? '18' : path.includes('/in/') ? 'true' : '200', headers: { 'access-control-allow-origin': '*' } });
+});
+try {
+  await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5174');
+  const sensors = page.getByRole('region', { name: 'Finch Sensors', exact: true });
+  await expect(sensors).toContainText('Connect Finch to read its sensors.');
+  await expect(sensors).toContainText('Heading: No data — calibration status unavailable');
+  await sensors.getByLabel('Distance', { exact: true }).check();
+  await sensors.getByLabel('Left Line', { exact: true }).check();
+  await sensors.getByLabel('Right Line', { exact: true }).check();
+  await expect(page.getByLabel('Input 1 sensor')).toHaveCount(0);
+  await page.getByLabel('Condition source').selectOption('sensor');
+  await expect(page.getByLabel('Detected class', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
+  await page.getByLabel('Sensor condition 1 value').fill('15');
+  await expect(page.getByLabel('Sensor condition 1 input')).not.toContainText('Heading');
+  await page.getByLabel('Action 1 type', { exact: true }).selectOption('stop');
+  await page.getByRole('button', { name: 'Connect Finch 2 A', exact: true }).click();
+  await expect(sensors).toContainText('37 cm');
+  // Sensor-only Play works without camera, demo, model or detections.
+  await expect(page.getByRole('button', { name: 'Play rules', exact: true })).toBeEnabled();
+  await page.getByText('Live Diagnostics', { exact: true }).click();
+  await page.getByRole('button', { name: 'Play rules', exact: true }).click();
+  await expect(page.getByLabel('Rule diagnostics')).toContainText('FALSE');
+  const stops = () => paths.filter(path => path === '/hummingbird/out/stopall/A').length;
+  const before = stops(); distance = '10';
+  await expect.poll(stops).toBeGreaterThan(before);
+  await expect(page.getByLabel('Rule diagnostics')).toContainText('TRUE');
+  distance = 'Not Connected';
+  await expect(page.getByLabel('Sensor diagnostics')).toContainText('Distance: No data');
+  await expect(page.getByLabel('Rule diagnostics')).toContainText('Waiting');
+  await expect(sensors).toContainText('Waiting for Distance data');
+  await page.getByRole('button', { name: 'Stop rules', exact: true }).click();
+  distance = '37';
+  await page.getByLabel('Condition source').selectOption('vision-sensor');
+  await page.getByLabel('Detected class', { exact: true }).selectOption('person');
+  await expect(page.getByLabel('Sensor condition 1 input')).toHaveValue('finchDistance');
+  await page.getByLabel('Condition source').selectOption('sensor');
+  await page.getByLabel('Sensor condition 1 input').selectOption('finchLineLeft');
+  await page.getByLabel('Sensor condition 1 value').fill('40');
+  await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
+  await page.getByLabel('Sensor condition 2 input').selectOption('finchLineRight');
+  await page.getByLabel('Sensor condition 2 value').fill('40');
+  const downloadReady = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save project', exact: true }).click();
+  const downloaded = JSON.parse(await readFile(await (await downloadReady).path(), 'utf8'));
+  expect(downloaded.rules[0].source).toBe('sensor');
+  expect(downloaded.rules[0].className).toBe('');
+  expect(downloaded.rules[0].sensorConditions.map(c => c.sensorId)).toEqual(['finchLineLeft', 'finchLineRight']);
+  await page.locator('input[type="file"][accept=".json,application/json"]').setInputFiles({ name: 'finch-sensors.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(downloaded)) });
+  await expect(page.getByLabel('Condition source')).toHaveValue('sensor');
+  await expect(page.getByLabel('Sensor condition 2 value')).toHaveValue('40');
+  expect(paths.some(path => path.includes('Compass'))).toBe(false);
+  expect(errors).toEqual([]);
+  await mkdir('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/finch-sensors.png', fullPage: true });
+  console.log('Finch browser checks passed: built-ins, sensor-only Play, AND rules, missing data, diagnostics, save/import. All hardware intercepted.');
+} finally { await browser.close(); }

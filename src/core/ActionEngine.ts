@@ -1,5 +1,5 @@
 import { delay, type RobotAdapter } from './RobotAdapter';
-import { makeAction, validTailSequence } from './types';
+import { makeAction, validTailSequence, ruleSource } from './types';
 import { FollowController, type TrackedFollowSettings } from './FollowController';
 import type { TrackedTarget } from './TargetTracker';
 import { followTargets } from './DetectionManager';
@@ -111,12 +111,18 @@ export class ActionEngine {
     const entering = active.filter(r => !previous.has(r.id));
     const supported = this.robot.getCapabilities();
     const starts = new Set(entering.filter(r => r.actions.some(a => a.enabled && supported.includes(a.kind) && continuous(a))).map(r => r.id));
-    const stops = new Set(entering.filter(r => r.actions.some(a => a.enabled && a.kind === 'stop')).map(r => r.id));
+    const stops = new Set(entering.filter(r => !(ruleSource(r) === 'sensor' && r.mode === 'disappearance') &&
+      r.actions.some(a => a.enabled && a.kind === 'stop')).map(r => r.id));
     const triggeredIds = new Set(triggered.map(r => r.id));
     const candidates = [...triggered, ...entering.filter(r => !triggeredIds.has(r.id))];
+    // Qualified sensor STOP rules dominate motion for as long as their condition is true.
+    const sensorBraking = supported.includes('move') && [...active.filter(r => !(ruleSource(r) === 'sensor' && r.mode === 'disappearance')), ...triggered]
+      .some(r => ruleSource(r) !== 'vision' && r.actions.some(a => a.enabled && a.kind === 'stop'));
     const steps = candidates.flatMap(r => r.actions.filter(a => a.enabled && supported.includes(a.kind) &&
       (continuous(a) ? starts.has(r.id) : triggeredIds.has(r.id) || (a.kind === 'stop' && stops.has(r.id))))
-      .map(action => ({ action, ruleId: r.id })));
+      .map(action => ({ action, ruleId: r.id })))
+      .filter(step => !sensorBraking || step.action.kind !== 'move');
+    if (sensorBraking) steps.sort((a, b) => Number(b.action.kind === 'stop') - Number(a.action.kind === 'stop'));
     const owners = new Map([...this.outputOwners, ...this.pendingOutputOwners]);
     const lostOutputs = [...owners].filter(([, owner]) => !this.activeRuleIds.has(owner)).map(([key]) => key);
     const replacements = new Map(steps.filter(s => continuous(s.action)).map(s => [outputKey(s.action)!, s.ruleId]));

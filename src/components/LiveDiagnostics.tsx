@@ -1,7 +1,7 @@
 import type { Project, VisionResult } from '../core/types';
 import type { TrackedTarget } from '../core/TargetTracker';
 import type { ActionEngine } from '../core/ActionEngine';
-import { SENSOR_MAX_AGE, type SensorState } from '../core/Sensors';
+import { HEADING_UNAVAILABLE, SENSOR_MAX_AGE, type SensorState } from '../core/Sensors';
 import { DEFAULT_NEAR_THRESHOLD } from '../core/DetectionDistance';
 import { detectionRegion } from '../core/DetectionRegions';
 import type { NetworkCameraDiagnostics } from '../core/NetworkCameraSource';
@@ -58,12 +58,13 @@ export function LiveDiagnostics({ project, detections, target, sensors, ruleResu
             <p>Forward speed: {Math.round((wheels[0] + wheels[1]) / 2)}% · Left wheel: {wheels[0]}% · Right wheel: {wheels[1]}%</p></>}
           <small>Last commanded speeds, not measured motion.</small></>}
       </section>}
-      {project.robotType === 'hummingbird' && !!project.sensorConfiguration?.length && <section aria-label="Sensor diagnostics"><h3>Sensors</h3>
-        <ul>{project.sensorConfiguration.map(sensor => {
+      {!!project.sensorConfiguration?.length && <section aria-label="Sensor diagnostics"><h3>{project.robotType === 'finch' ? 'Finch Sensors' : 'Sensors'}</h3>
+        <ul>{(project.sensorConfiguration ?? []).map(sensor => {
           const sample = sensors[sensor.id];
           const reading = robot && sample && now >= sample.updatedAt && now - sample.updatedAt <= SENSOR_MAX_AGE ? sample.reading : null;
           return <li key={sensor.id}>{sensor.label}: {reading ? reading.kind === 'boolean' ? reading.value ? 'Pressed' : 'Not pressed' : `${reading.value} ${reading.unit ?? sensor.unit ?? ''}` : 'No data'}</li>;
         })}</ul>
+        {project.robotType === 'finch' && <p>Heading: {HEADING_UNAVAILABLE}</p>}
       </section>}
       {!!project.rules.length && <section aria-label="Rule diagnostics"><h3>Rules</h3>
         <ul>{project.rules.map((rule, i) => <li key={rule.id}>Rule {i + 1} · {rule.name}: {running && robot && rule.enabled ? ruleResults[rule.id] ?? 'Waiting' : 'Waiting'}{!rule.enabled ? ' — Disabled' : !running ? ' — Press Play to evaluate' : ''}</li>)}</ul>

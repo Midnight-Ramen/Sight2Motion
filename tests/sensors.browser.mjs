@@ -17,8 +17,9 @@ try {
   await page.getByRole('button', { name: 'Add rule', exact: true }).click();
   await page.getByLabel('Input 1 sensor').selectOption('distance');
   await expect(page.getByLabel('Input 4 sensor')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Attach to Hummingbird Bit A', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect Hummingbird Bit A', exact: true }).click();
   await expect(page.getByLabel('Hummingbird sensor inputs')).toContainText('35 cm');
+  await page.getByLabel('Condition source').selectOption('vision-sensor');
   await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
   await page.getByLabel('Action 1 type', { exact: true }).selectOption('triLed');
   await page.getByLabel('Action 1 color', { exact: true }).fill('#ff0000');

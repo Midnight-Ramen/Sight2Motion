@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, GripVertical, Lightbulb, Plus, Trash2 } from 'lucide-react';
 import {
   actionDefinitions,
+  ruleSource,
   makeAction,
   sequenceDefaults,
   type Action,
@@ -41,6 +42,8 @@ export function RuleCard({
   onDelete: () => void;
   capabilities: ActionKind[];
 }) {
+  const source = ruleSource(rule);
+  const sensorOnly = source === 'sensor';
   const patch = (p: Partial<Rule>) => onChange({ ...rule, ...p });
   const currentSizes = detections.filter(d => d.className === rule.className &&
     d.confidence >= rule.confidence &&
@@ -82,11 +85,19 @@ export function RuleCard({
       <div className="rule-body">
         <div className="condition">
           <span className="eyebrow">WHEN THIS HAPPENS</span>
+          <label className="sentence">Condition <select aria-label="Condition source" value={source} onChange={e => patch({
+            source: e.target.value as Rule['source'],
+            ...(e.target.value === 'vision' ? { sensorConditions: [] } : {}),
+            ...(e.target.value === 'sensor' ? { className: '', region: 'anywhere', distance: 'any' } : {}),
+          })}>
+            <option value="vision">Vision</option><option value="sensor">Sensor</option><option value="vision-sensor">Vision + Sensor</option>
+          </select></label>
           {!compatibleRule(rule, visionCapabilities) && <div role="status">
             <b>Needs update</b>
             <p>This rule needs bounding boxes. Choose object detection or convert to a classification rule.</p>
             <button onClick={() => onChange(classificationRule(rule))}>Convert to classification rule</button>
           </div>}
+          {!sensorOnly && <>
           {!visionCapabilities.boundingBoxes && <small>Image classification recognizes what the camera sees, but not where the object is located.</small>}
           <div className="sentence">
             <b className="keyword">IF</b>
@@ -137,17 +148,18 @@ export function RuleCard({
               onChange={(e) => patch({ confidence: +e.target.value / 100 })}
             />
           </label>
-          <SensorConditions conditions={rule.sensorConditions ?? []} sensors={sensors} available={sensorsAvailable}
-            onChange={sensorConditions => patch({ sensorConditions })} />
+          </>}
+          {source !== 'vision' && <SensorConditions sensorOnly={sensorOnly} conditions={rule.sensorConditions ?? []} sensors={sensors} available={sensorsAvailable}
+            onChange={sensorConditions => patch({ sensorConditions })} />}
           <div className="trigger-pill">
             ↻{' '}
             {rule.mode === 'appearance'
-              ? 'Once per appearance'
+              ? sensorOnly ? 'When condition becomes true' : 'Once per appearance'
               : rule.mode === 'disappearance'
-                ? 'When it disappears'
+                ? sensorOnly ? 'When condition becomes false' : 'When it disappears'
                 : rule.mode === 'interval'
                   ? 'Every interval'
-                  : 'While visible'}
+                  : sensorOnly ? 'While true' : 'While visible'}
           </div>
           <details>
             <summary>Timing & trigger settings</summary>
@@ -158,14 +170,14 @@ export function RuleCard({
                   value={rule.mode}
                   onChange={(e) => patch({ mode: e.target.value as Rule['mode'] })}
                 >
-                <option value="appearance">Once per appearance</option>
-                  <option value="continuous">While visible</option>
+                <option value="appearance">{sensorOnly ? 'When condition becomes true' : 'Once per appearance'}</option>
+                  <option value="continuous">{sensorOnly ? 'While true' : 'While visible'}</option>
                   <option value="interval">Every N seconds</option>
-                  <option value="disappearance">When object disappears</option>
+                  <option value="disappearance">{sensorOnly ? 'When condition becomes false' : 'When object disappears'}</option>
                 </select>
               </label>
               <label>
-                Visible for (ms)
+                {sensorOnly ? 'True for (ms)' : 'Visible for (ms)'}
                 <input
                   type="number"
                   min={0}
@@ -306,7 +318,7 @@ export function RuleCard({
                         onChange={e => updateAction(a.id, { ...(e.target.value === 'follow' ? FOLLOW_DEFAULTS : {}), mode: e.target.value as Action['mode'] })}>
                         <option value="timed">Timed</option>
                         <option value="continuous">Continuous while rule matches</option>
-                        {a.kind === 'move' && <option value="follow" disabled={!visionCapabilities.boundingBoxes}>Follow detected target</option>}
+                        {a.kind === 'move' && <option value="follow" disabled={sensorOnly || !visionCapabilities.boundingBoxes}>Follow detected target</option>}
                       </select>
                     </label>
                     {a.mode === 'follow' && <>

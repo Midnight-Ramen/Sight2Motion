@@ -52,6 +52,7 @@ export interface Action {
 }
 export type TriggerMode = 'appearance' | 'continuous' | 'interval' | 'disappearance';
 export interface Rule {
+  source?: 'vision' | 'sensor' | 'vision-sensor';
   sensorConditions?: SensorCondition[];
   id: string;
   name: string;
@@ -67,6 +68,8 @@ export interface Rule {
   mode: TriggerMode;
   actions: Action[];
 }
+export const ruleSource = (rule: Rule) => rule.source ?? (rule.sensorConditions?.length ? 'vision-sensor' : 'vision');
+export const ruleNeedsVision = (rule: Rule) => ruleSource(rule) !== 'sensor';
 export interface VisionSettings {
   confidence: number;
   fps: number;

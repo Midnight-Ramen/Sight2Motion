@@ -1,8 +1,8 @@
-import { actionDefinitions, validTailSequence, type Action, type Project } from './types';
+import { actionDefinitions, validTailSequence, ruleNeedsVision, type Action, type Project } from './types';
 import { normalizeTeachableMachineUrl } from './TeachableMachineUrl';
 import { FOLLOW_DEFAULTS } from './FollowController';
 import { networkCameraUrl } from './NetworkCameraSource';
-import { SENSOR_TYPES, SENSOR_OPERATORS, sensorDescriptor } from './Sensors';
+import { SENSOR_TYPES, SENSOR_OPERATORS, sensorDescriptor, isFinchSensor, finchSensorDescriptor, FINCH_ORIENTATIONS } from './Sensors';
 const KEY = 'vision-robot-studio.projects.v1';
 const number = (v: unknown, min: number, max: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -34,9 +34,13 @@ export function parseProject(text: string): Project {
     throw new Error('Choose a valid Robot Studio project.');
   const ids = new Set<string>();
   const configuration = p.sensorConfiguration ?? [];
-  if (!Array.isArray(configuration) || configuration.length > 3 || configuration.some(s => !obj(s) ||
-    !Object.hasOwn(SENSOR_TYPES, String(s.type)) || !Number.isInteger(s.port) || !number(s.port, 1, 3) ||
-    s.id !== `${s.type}:${s.port}`) || new Set(configuration.map(s => s.port)).size !== configuration.length)
+  if (!Array.isArray(configuration) || configuration.length > (p.robotType === 'hummingbird' ? 3 : 8) ||
+    configuration.some(s => !obj(s) || (isFinchSensor(String(s.type))
+      ? p.robotType !== 'finch' || s.id !== s.type || s.port !== undefined
+      : p.robotType !== 'hummingbird' || !Object.hasOwn(SENSOR_TYPES, String(s.type)) ||
+        !Number.isInteger(s.port) || !number(s.port, 1, 3) || s.id !== `${s.type}:${s.port}`)) ||
+    new Set(configuration.map(s => s.id)).size !== configuration.length ||
+    (p.robotType === 'hummingbird' && new Set(configuration.map(s => s.port)).size !== configuration.length))
     throw new Error('Sensor configuration is not valid.');
   for (const r of p.rules) {
     if (
@@ -48,6 +52,7 @@ export function parseProject(text: string): Project {
       typeof r.className !== 'string' ||
       r.className.length > 100 ||
       typeof r.enabled !== 'boolean' ||
+      (r.source !== undefined && !['vision', 'sensor', 'vision-sensor'].includes(String(r.source))) ||
       (r.region !== undefined && !['anywhere', 'left', 'center', 'right'].includes(String(r.region))) ||
       (r.distance !== undefined && !['any', 'far', 'near'].includes(String(r.distance))) ||
       (r.nearThreshold !== undefined && !number(r.nearThreshold, 0.03, 0.4)) ||
@@ -63,9 +68,9 @@ export function parseProject(text: string): Project {
     ids.add(r.id);
     const conditions = r.sensorConditions ?? [];
     if (!Array.isArray(conditions) || conditions.length > 10 || conditions.some(c => !obj(c) ||
-      typeof c.id !== 'string' || typeof c.sensorId !== 'string' || !/^(distance|light|sound|analog|digital):[1-3]$/.test(c.sensorId) ||
+      typeof c.id !== 'string' || typeof c.sensorId !== 'string' || !(/^(distance|light|sound|analog|digital):[1-3]$/.test(c.sensorId) || isFinchSensor(c.sensorId)) ||
       !Object.hasOwn(SENSOR_OPERATORS, String(c.operator)) ||
-      !(typeof c.value === 'boolean' ? c.operator === 'equals' : number(c.value, -10000, 10000))) ||
+      !(c.sensorId === 'finchOrientation' ? c.operator === 'equals' && FINCH_ORIENTATIONS.includes(c.value as typeof FINCH_ORIENTATIONS[number]) : typeof c.value === 'boolean' ? c.operator === 'equals' : number(c.value, -10000, 10000))) ||
       new Set(conditions.map(c => c.id)).size !== conditions.length)
       throw new Error('A sensor condition is not valid.');
     for (const a of r.actions) {
@@ -109,7 +114,7 @@ export function parseProject(text: string): Project {
   const valid = p as unknown as Project;
   const teachableMachineUrl = valid.teachableMachineUrl ? normalizeTeachableMachineUrl(valid.teachableMachineUrl) : undefined;
   // Preserve every referenced class, including legacy projects with more than ten objects.
-  const selectedClasses = [...new Set([...(valid.selectedClasses ?? []), ...valid.rules.map(r => r.className)])];
+  const selectedClasses = [...new Set([...(valid.selectedClasses ?? []), ...valid.rules.filter(ruleNeedsVision).map(r => r.className)])];
   if (!selectedClasses.length && valid.selectedClasses === undefined) selectedClasses.push('person');
   // Keep only our schema: extra imported fields (including media) are discarded.
   return {
@@ -121,7 +126,7 @@ export function parseProject(text: string): Project {
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
     customObjects: [...new Set((valid.customObjects ?? []).map(n => n.trim()))],
-    sensorConfiguration: configuration.map(s => sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
+    sensorConfiguration: configuration.map(s => isFinchSensor(s.type) ? finchSensorDescriptor(s.type) : sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
     id: valid.id,
     name: valid.name,
     robotType: String(valid.robotType) === 'mock-finch' ? 'finch' : valid.robotType,
@@ -132,6 +137,7 @@ export function parseProject(text: string): Project {
       visualize: valid.vision.visualize,
     },
     rules: valid.rules.map((r) => ({
+      ...(r.source ? { source: r.source } : {}),
       id: r.id,
       name: r.name,
       enabled: r.enabled,

@@ -69,6 +69,7 @@ import { RobotRouter } from './core/RobotRouter';
 import { HardwareTest } from './components/HardwareTest';
 import { SensorInputs } from './components/SensorInputs';
 import type { SensorState } from './core/Sensors';
+import { ruleSource } from './core/types';
 import './styles.css';
 import './theme.css';
 import { ProjectTemplatePicker } from './components/ProjectTemplatePicker';
@@ -304,13 +305,16 @@ export default function App() {
   const evaluateInputs = useCallback(
     (items: VisionResult[], capturedAt = performance.now()) => {
       if (
-        !aiRef.current ||
+        (!aiRef.current && !actions.followingSelectedTarget) ||
         !robot.connected
       )
         return;
       const p = projectRef.current;
-      const triggered = rules.evaluate(p.rules, items, performance.now(), capabilitiesFor(p.visionProvider),
-        { state: sensorRef.current, configuration: p.sensorConfiguration ?? [], available: p.robotType === 'hummingbird' && hummingbird.connected });
+      const selectedSafety = !aiRef.current && actions.followingSelectedTarget;
+      const evaluatedRules = selectedSafety ? p.rules.filter(r => ruleSource(r) !== 'vision' && r.actions.some(a => a.enabled && a.kind === 'stop')) : p.rules;
+      const triggered = rules.evaluate(evaluatedRules, items, performance.now(), capabilitiesFor(p.visionProvider),
+        { state: sensorRef.current, configuration: p.sensorConfiguration ?? [], available: robot.connected });
+      if (selectedSafety && !rules.activeRules.length && !triggered.length) return;
       const wasBusy = actions.busy;
       void actions.updateRules(triggered, rules.activeRules, { detections: items, capturedAt, width: camera.width || (demo ? 1280 : 0), height: camera.height || (demo ? 720 : 0) });
       if (wasBusy) return;
@@ -329,8 +333,9 @@ export default function App() {
   useEffect(() => {
     sensorRef.current = {};
     setSensorState({});
-    if (robotMode !== 'hummingbird' || !connected || !project.sensorConfiguration?.length) return;
-    hummingbird.sensors.start(project.sensorConfiguration ?? [], state => {
+    if (!connected || !project.sensorConfiguration?.length) return;
+    const provider = robotMode === 'finch' ? finch.sensors : hummingbird.sensors;
+    provider.start(project.sensorConfiguration ?? [], state => {
       sensorRef.current = state;
       setSensorState(state);
     });
@@ -341,10 +346,10 @@ export default function App() {
       const vision = latestVision.current;
       evaluateInputs(performance.now() - vision.updatedAt <= 1500 ? vision.items : [], vision.capturedAt);
     }, 100);
-    const stopSensors = () => hummingbird.sensors.stop();
+    const stopSensors = () => provider.stop();
     window.addEventListener('pagehide', stopSensors);
     return () => { clearInterval(timer); stopSensors(); window.removeEventListener('pagehide', stopSensors); };
-  }, [robotMode, connected, project.id, project.sensorConfiguration, hummingbird, evaluateInputs]);
+  }, [robotMode, connected, project.id, project.sensorConfiguration, hummingbird, finch, evaluateInputs]);
   useEffect(() => {
     const version = ++loopVersion.current;
     let timer: ReturnType<typeof setTimeout>;
@@ -599,11 +604,8 @@ export default function App() {
       log('AI paused. Detection continues.');
       return;
     }
-    if (
-      !robot.connected || hardwareBusy ||
-      (!demo && (!cameraOn || !modelReady))
-    ) {
-      setNotice('Connect your selected robot and start the camera + model, or try the demo first.');
+    if (!readiness.play) {
+      setNotice(readiness.helper);
       return;
     }
     rules.reset();
@@ -1094,8 +1096,8 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'hummingbird' && <SensorInputs configuration={project.sensorConfiguration ?? []} state={sensorState}
-                onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />}
+              <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}
+                onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />
             </section>
             <section className="panel model-panel" id="model-panel" tabIndex={-1}>
               <div className="panel-heading">
@@ -1268,7 +1270,7 @@ export default function App() {
               capabilities={ROBOTS[robotMode].actions}
               robotName={ROBOTS[robotMode].name}
               sensors={project.sensorConfiguration ?? []}
-              sensorsAvailable={robotMode === 'hummingbird'}
+              sensorsAvailable={true}
               onChange={(rule) =>
                 edit({
                   ...project,

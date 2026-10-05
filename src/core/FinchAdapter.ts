@@ -2,12 +2,29 @@ import type { Action, ActionKind, MotionMode } from './types';
 import { delay, type RobotAdapter } from './RobotAdapter';
 import { BirdBrainTransport } from './BirdBrainTransport';
 import { FinchWatchdog, type WheelWatchdog } from './FinchWatchdog';
+import { SensorProvider, SENSOR_POLL_INTERVAL } from './SensorProvider';
+import { FINCH_SENSORS, FINCH_ORIENTATIONS, isFinchSensor, normalizeSensor, type SensorDescriptor } from './Sensors';
 export interface FinchStatus {
   connector: 'not-detected' | 'detected';
   connection: 'disconnected' | 'connecting' | 'connected' | 'error';
   message: string;
 }
 export class FinchAdapter implements RobotAdapter {
+  readonly sensors = new SensorProvider((sensor, signal) => this.readSensor(sensor, signal));
+  async readSensor(sensor: SensorDescriptor, signal: AbortSignal) {
+    if (!this.connected || !isFinchSensor(sensor.type)) return null;
+    if (sensor.type === 'finchOrientation') {
+      // Reference Finch.getOrientation uses named boolean queries, not raw accelerometer axes.
+      for (const [index, orientation] of FINCH_ORIENTATIONS.slice(0, -1).entries()) {
+        if (index) await delay(SENSOR_POLL_INTERVAL, signal);
+        const raw = await this.transport.request(`/hummingbird/in/finchOrientation/${encodeURIComponent(orientation)}/${this.slot}`, signal);
+        if (raw === 'true') return normalizeSensor(sensor.type, orientation);
+        if (raw !== 'false') return null;
+      }
+      return normalizeSensor(sensor.type, 'In between');
+    }
+    return normalizeSensor(sensor.type, await this.transport.request(`/hummingbird/in/${FINCH_SENSORS[sensor.type].path}/${this.slot}`, signal));
+  }
   status: FinchStatus = {
     connector: 'not-detected',
     connection: 'disconnected',
@@ -30,6 +47,7 @@ export class FinchAdapter implements RobotAdapter {
   }
   private publish(patch: Partial<FinchStatus>) {
     this.status = { ...this.status, ...patch };
+    if (!this.connected) this.sensors.stop();
     this.changed({ ...this.status });
   }
   getCapabilities(): ActionKind[] {
@@ -107,6 +125,7 @@ export class FinchAdapter implements RobotAdapter {
     }
   }
   async disconnect() {
+    this.sensors.stop();
     ++this.generation;
     clearTimeout(this.heartbeat);
     try {

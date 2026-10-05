@@ -19,7 +19,7 @@ export const rotationByte = (speed: number) => {
 export class HummingbirdAdapter implements RobotAdapter {
   readonly sensors = new SensorProvider((sensor, signal) => this.readSensor(sensor, signal));
   async readSensor(sensor: SensorDescriptor, signal: AbortSignal) {
-    if (!this.connected || ![1, 2, 3].includes(sensor.port) || sensor.type === 'digital') return null;
+    if (!this.connected || ![1, 2, 3].includes(sensor.port!) || !['distance', 'light', 'sound', 'analog'].includes(sensor.type)) return null;
     return normalizeSensor(sensor.type, await this.transport.request(`/hummingbird/in/sensor/${sensor.port}/${this.slot}`, signal));
   }
   status: RobotStatus = { connector: 'not-detected', connection: 'disconnected', message: 'Connect Hummingbird Bit A in BlueBird, then attach here.' };
