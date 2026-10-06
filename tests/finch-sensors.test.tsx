@@ -120,7 +120,7 @@ it('does not overlap reads even when a cancelled read settles late during restar
 });
 
 it('sensor-only triggers without a class or DetectionManager and preserves timing', () => {
-  const detect = vi.spyOn(DetectionManager.prototype, 'update'), engine = new RuleEngine(), r = rule(); r.minDuration = 100;
+  const detect = vi.spyOn(DetectionManager.prototype, 'update'), engine = new RuleEngine(), r = rule(); r.minDuration = 100; r.mode = 'appearance';
   expect(engine.evaluate([r], [], 0, undefined, sample())).toEqual([]);
   expect(engine.evaluate([r], [], 100, undefined, sample())).toEqual([r]);
   expect(engine.evaluate([r], [], 200, undefined, sample())).toEqual([]);

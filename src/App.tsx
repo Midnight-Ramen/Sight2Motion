@@ -1004,7 +1004,7 @@ export default function App() {
                   <option value="network">Network Camera</option>
                 </select>
               </label>
-              <label>Mirror horizontally
+              <label className="mirror-control">Mirror horizontally
                 <input type="checkbox" role="switch" aria-label="Mirror horizontally" checked={mirrorHorizontal}
                   onChange={e => { ++loopVersion.current; pause(); consume([]); edit({ ...project, mirrorHorizontal: e.target.checked }); }} />
               </label>
@@ -1270,9 +1270,8 @@ export default function App() {
             <div>
               <h2>
                 <SlidersHorizontal size={20} />
-                Your AI rules <span className="count">{project.rules.length}</span>
+                Your AI rules <span className="count">{project.rules.length}</span><small className="rules-status" role="status">{ai ? 'Running' : 'Paused'}</small>
               </h2>
-              <p>Create rules to tell your robot what to do.</p><small role="status">{ai ? 'Running' : 'Paused'}</small>
             </div>
             <div className="rules-controls">
               <button
@@ -1285,8 +1284,8 @@ export default function App() {
               </button>
             </div>
           </div>
-          <p className="setup-guidance" id="play-blocker" aria-live="polite">{!ai && !readiness.play
-            ? `Before Play: ${setupGuidance.replace(/^Next: /, '').replace(/^Ready! /, '')}` : '\u00a0'}</p>
+          <p className="setup-guidance rules-guidance" id="play-blocker" aria-live="polite">Create rules to tell your robot what to do. {!ai && !readiness.play
+            ? ` · Before Play: ${setupGuidance.replace(/^Next: /, '').replace(/^Ready! /, '')}` : ''}</p>
           {project.rules.map((r, i) => (
             <RuleCard
               key={r.id}

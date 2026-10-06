@@ -48,7 +48,7 @@ describe('DetectionManager', () => {
 describe('RuleEngine', () => {
   it('requires a sustained 500 ms detection and fires only once per appearance', () => {
     const e = new RuleEngine(),
-      r = makeRule();
+      r = { ...makeRule(), mode: 'appearance' as const };
     expect(e.evaluate([r], [person], 0)).toEqual([]);
     expect(e.evaluate([r], [person], 499)).toEqual([]);
     expect(e.evaluate([r], [person], 500)).toEqual([r]);

@@ -44,7 +44,7 @@ it('fails missing, stale and unavailable readings safely', () => {
 });
 it('requires vision AND every sensor and preserves minimum duration, appearance and cooldown', () => {
   const engine = new RuleEngine();
-  const rule = { ...makeRule(), sensorConditions: [condition], minDuration: 100, cooldown: 100 };
+  const rule = { ...makeRule(), mode: 'appearance' as const, sensorConditions: [condition], minDuration: 100, cooldown: 100 };
   expect(engine.evaluate([rule], person, 0, undefined, input(sample(35)))).toEqual([]);
   expect(engine.evaluate([rule], [], 100, undefined, input(sample(10, 100)))).toEqual([]);
   expect(engine.evaluate([rule], person, 200, undefined, input(sample(10, 200)))).toEqual([]);

@@ -377,7 +377,10 @@ main { padding-top: 12px; }
 .topbar .title-line .save-status { font-size: 10px; }
 .topbar .project-buttons { gap: 5px; }
 .topbar .project-buttons button, .topbar .more-menu summary { padding: 4px 8px; min-height: 28px; font-size: 11px; }
-.rules-section > .section-heading { flex-direction: row; align-items: start; justify-content: space-between; }
+.rules-section > .section-heading { flex-direction: row; align-items: start; justify-content: space-between; padding: 4px 0; margin-bottom: 4px; }
+.rules-subtitle { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; }
+.rules-section .rules-subtitle p { margin: 0; }
+.rules-section #play-blocker { margin: 0 0 10px; }
 .rules-section .section-heading small { color: var(--muted); font-size: 11px; }
 .rules-controls { flex-shrink: 0; }
 .numeric-slider { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; }
@@ -402,3 +405,17 @@ main { padding-top: 12px; }
  .safety-bar kbd { display: none; }
  .rules-section > .section-heading { flex-wrap: wrap; }
 }
+/* Compact rule heading and consistent action parameter columns. */
+.rules-section > .section-heading { padding: 0; margin: 0 0 4px; align-items: center; }
+.rules-section .rules-status { font-weight: 400; padding: 2px 6px; border-radius: 4px; background: var(--surface-soft); }
+.rules-section #play-blocker { min-height: 0; margin: 0 0 8px; font-size: 11px; line-height: 1.4; }
+.rule-body .action-card { grid-template-columns: 12px 30px minmax(0, 1fr); align-items: start; }
+.rule-body .action-card > .action-icon { display: inline-flex; grid-column: 2; grid-row: 1; }
+.rule-body .action-fields { grid-column: 3; grid-row: 1; }
+.rule-body .action-tools { grid-column: 3; justify-self: end; }
+.rule-body .action-fields > select:first-child { padding-left: 0; }
+.rule-body .action-fields .color-field { flex-wrap: nowrap; align-items: center; }
+.action-drag { grid-column: 1; grid-row: 1; padding-top: 6px; cursor: grab; }
+label.mirror-control { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+label.mirror-control input { margin: 0; width: auto; }
+.numeric-slider input[type=range] { touch-action: pan-y; }

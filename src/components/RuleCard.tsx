@@ -238,8 +238,6 @@ export function RuleCard({
             <div
               className={`action-card ${!a.enabled ? 'muted' : ''}`}
               key={a.id}
-              draggable
-              onDragStart={(e) => e.dataTransfer.setData('text/plain', `${rule.id}:${i}`)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
@@ -247,7 +245,7 @@ export function RuleCard({
                 if (id === rule.id && Number.isInteger(+from)) reorder(+from, i);
               }}
             >
-              <GripVertical size={16} className="grip" />
+              <span className="action-drag" draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', `${rule.id}:${i}`)} title="Drag to reorder action"><GripVertical size={16} className="grip" /></span>
               <span className="action-index">{i + 1}</span>
               <span className="action-icon"><ActionIcon action={a} /></span>
               <div className="action-fields">

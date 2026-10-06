@@ -134,7 +134,7 @@ export const makeRule = (): Rule => ({
   minDuration: 500,
   cooldown: 2000,
   interval: 3000,
-  mode: 'appearance',
+  mode: 'continuous',
   actions: [makeAction()],
 });
 export const makeProject = (): Project => ({
