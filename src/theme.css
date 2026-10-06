@@ -419,3 +419,35 @@ main { padding-top: 12px; }
 label.mirror-control { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 label.mirror-control input { margin: 0; width: auto; }
 .numeric-slider input[type=range] { touch-action: pan-y; }
+/* Compact expanded editors; collapsed rule presentation is unchanged. */
+.rule-body { padding: 8px; gap: 10px; align-items: start; }
+.rule-body > .condition, .rule-body > .actions { padding: 8px; min-height: 0; align-self: start; }
+.rule-body .eyebrow { margin-bottom: 6px; }
+.rule-body .sentence { gap: 10px; margin-top: 6px; }
+.rule-body .condition select { min-width: 0; max-width: 100%; padding: 5px 8px; min-height: 30px; font-size: 12px; }
+.rule-body .condition-source select { width: 200px; }
+.rule-body .object-select { width: 160px; }
+.spatial-controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.spatial-controls > label { display: flex; align-items: center; gap: 8px; flex: 1 1 140px; min-width: 0; font-size: 12px; }
+.spatial-controls select { flex: 1; width: 140px; }
+.rule-body .confidence { margin: 8px 0; }
+.rule-body .confidence .numeric-slider { margin-top: 6px; }
+.rule-body .confidence input { margin-top: 0; }
+.condition-footer { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.rule-body .condition-footer .trigger-pill, .rule-body .condition-footer details { margin: 0; }
+.condition-footer details { flex: 1 1 150px; }
+.condition-footer details[open] { flex-basis: 100%; }
+.rule-body .timing { padding-top: 8px; gap: 8px; }
+.rule-body .then-label { margin: 6px 0 8px; }
+.rule-body .action-card { padding: 6px; gap: 4px 8px; margin-bottom: 8px; min-height: 0; }
+.rule-body .action-fields { gap: 4px; }
+.rule-body .action-fields > select:first-child { min-height: 30px; padding-block: 4px; }
+.rule-body .action-tools { margin: 0; }
+.rule-body .add-action { margin-top: 0; padding: 6px 8px; min-height: 30px; }
+.rule-body { padding-block: 6px; }
+.rule-body .condition > .eyebrow { margin-bottom: 0; }
+.rule-body .confidence { margin: 6px 0; }
+.rule-body .confidence .numeric-slider input[type=number] { padding: 3px 6px; min-height: 26px; height: 26px; }
+.rule-card > div[id] > p[role=status] { margin: 6px 8px; }
+.rule-body { padding-block: 4px; }
+.rule-body .condition select { min-height: 26px; padding-block: 4px; }

@@ -922,19 +922,7 @@ export default function App() {
               <img ref={networkImage} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn && !demo ? '' : 'hidden'} />
               {!cameraOn && !demo && (
                 <div className="camera-empty">
-                  <div className="viewfinder">
-                    <Camera size={38} strokeWidth={1.2} />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                  </div>
                   <h3>A little vision. A lot of possibility.</h3>
-                  <p>
-                    Connect your camera to let your robot
-                    <br />
-                    discover the world around you.
-                  </p>
                   <button className="primary" disabled={cameraBusy} onClick={() => void connectCamera()}>
                     {cameraBusy ? (
                       <LoaderCircle className="spin" size={17} />
@@ -942,9 +930,6 @@ export default function App() {
                       <Camera size={17} />
                     )}
                     Start Camera
-                  </button>
-                  <button className="demo-link" onClick={startDemo}>
-                    Just exploring? Try the demo <ArrowRight size={14} />
                   </button>
                 </div>
               )}

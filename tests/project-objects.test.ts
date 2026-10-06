@@ -22,7 +22,7 @@ describe('project objects', () => {
     const html = renderToStaticMarkup(createElement(RuleCard, {
       rule: makeRule(), index: 0, selectedClasses: ['person', 'bottle'], capabilities: [], onChange: () => {}, onDelete: () => {},
     }));
-    const dropdown = html.match(/<select aria-label="Detected class"[\s\S]*?<\/select>/)?.[0];
+    const dropdown = html.match(/<select[^>]*aria-label="Detected class"[\s\S]*?<\/select>/)?.[0];
     expect(dropdown).toContain('value="person"');
     expect(dropdown).toContain('value="bottle"');
     expect(dropdown).not.toContain('car');

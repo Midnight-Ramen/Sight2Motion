@@ -96,7 +96,7 @@ export function RuleCard({
       <div className="rule-body">
         <div className="condition">
           <span className="eyebrow">WHEN THIS HAPPENS</span>
-          <label className="sentence">Condition <select aria-label="Condition source" value={source} onChange={e => patch({
+          <label className="sentence condition-source">Condition <select aria-label="Condition source" value={source} onChange={e => patch({
             source: e.target.value as Rule['source'],
             ...(e.target.value === 'vision' ? { sensorConditions: [] } : {}),
             ...(e.target.value === 'sensor' ? { className: '', region: 'anywhere', distance: 'any' } : {}),
@@ -113,6 +113,7 @@ export function RuleCard({
           <div className="sentence">
             <b className="keyword">IF</b>
             <select
+              className="object-select"
               aria-label={visionCapabilities.boundingBoxes ? 'Detected class' : 'Class'}
               value={selectedClasses.includes(rule.className) ? rule.className : ''}
               onChange={(e) => patch({ className: e.target.value })}
@@ -124,6 +125,7 @@ export function RuleCard({
             </select>
             <span>is detected</span>
           </div>
+          <div className="spatial-controls">
           {visionCapabilities.regions && <label>Location <select aria-label="Location" value={rule.region ?? 'anywhere'}
             onChange={e => patch({ region: e.target.value as Rule['region'] })}>
             {(['anywhere', 'left', 'center', 'right'] as const).map(region => <option key={region} value={region}>{objectLabel(region)}</option>)}
@@ -135,6 +137,9 @@ export function RuleCard({
                 <option key={distance} value={distance}>{objectLabel(distance)}</option>)}
             </select>
           </label>
+          </>}
+          </div>
+          {visionCapabilities.apparentDistance && <>
           {(rule.distance ?? 'any') !== 'any' && <div>
             <label className="confidence">
               Near when object fills at least <b>{Math.round((rule.nearThreshold ?? 0.12) * 100)}%</b>
@@ -162,6 +167,7 @@ export function RuleCard({
           </>}
           {source !== 'vision' && <SensorConditions sensorOnly={sensorOnly} conditions={rule.sensorConditions ?? []} sensors={sensors} available={sensorsAvailable}
             onChange={sensorConditions => patch({ sensorConditions })} />}
+          <div className="condition-footer">
           <div className="trigger-pill">
             ↻{' '}
             {rule.mode === 'appearance'
@@ -227,6 +233,7 @@ export function RuleCard({
               )}
             </div>
           </details>
+          </div>
         </div>
         <div className="actions">
           <span className="eyebrow">MAKE THIS HAPPEN</span>

@@ -27,7 +27,8 @@ try {
   await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
   await page.getByLabel('Action 1 type', { exact: true }).selectOption('triLed');
   await page.getByLabel('Action 1 color', { exact: true }).fill('#ff0000');
-  await page.getByRole('button', { name: 'Just exploring? Try the demo', exact: true }).click();
+  await page.getByRole('button', { name: 'Getting started', exact: true }).click();
+  await page.getByRole('button', { name: 'Try the demo', exact: true }).click();
   await page.getByRole('button', { name: 'Play rules', exact: true }).click();
   await page.waitForTimeout(900);
   expect(paths.includes('/hummingbird/out/triled/1/255/0/0/A')).toBe(false);

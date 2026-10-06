@@ -250,7 +250,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       await service.current?.clear().catch(() => {});
     } catch (e) { appearance.stop(); appearanceActive.current = false; setTarget(null); console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); }
   }
-  const controls = <div className={`selection-controls${active && controlsContainer ? ' selection-editor' : ''}`}>
+  const controls = <div className={`selection-controls${controlsContainer ? ' selection-editor' : ''}`}>
       <button disabled={!available || busy} onClick={() => void capture()}>{active ? 'Capture new frame' : 'Select Object'}</button>
       {active && <button onClick={close}>Back to live</button>}
       {active && <>
@@ -273,7 +273,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       {!active && target && <span role="status">{target.targetLost ? 'TARGET LOST' : target.state === 'TRACKING' ? 'TARGET LOCKED' : 'TARGET UNCERTAIN'} · Tracking: {target.displayName} · Detector: {target.detectorLabel}
         {' · '}X error {target.horizontalError.toFixed(2)}</span>}
       {status && <span role="status">{status}</span>}
-      {available && !active && !target && !status && <span>Select an object in the camera view before using Selected Target.</span>}
+      {!active && !target && !status && <small className="muted">Select an object in the camera to use Selected Target.</small>}
       {selected && <small>{selected.area.toLocaleString()} pixels selected</small>}
     </div>;
   return <>
@@ -287,7 +287,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       onPointerUp={e=>{const a=drag.current,p=pointFrom(e);drag.current=null;if(!a||!p)return;
         if(Math.abs(a.x-p.x)>=3&&Math.abs(a.y-p.y)>=3) void refine({...prompts,box:{x:Math.min(a.x,p.x),y:Math.min(a.y,p.y),width:Math.abs(a.x-p.x),height:Math.abs(a.y-p.y)}});
         else draw(selected??undefined);}} />}
-    {active && controlsContainer ? createPortal(controls, controlsContainer) : controls}
+    {controlsContainer ? createPortal(controls, controlsContainer) : null}
     {follow && <TrackedFollowControls target={active ? null : target} capturedAt={trackedAt.current} timeout={tracker.lossTimeoutMs}
       access={{ ...follow, available: follow.available && available && (appearanceActive.current || trackingEnabled) && !active }} />}
   </>;
