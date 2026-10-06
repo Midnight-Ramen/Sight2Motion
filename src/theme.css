@@ -159,3 +159,211 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
   color: #000;
   background-color: #fff;
 }
+/* Workspace presentation: one camera column and one editable rules column. */
+.studio-grid { grid-template-columns: minmax(0, 1.2fr) minmax(430px, 1fr); gap: 20px; align-items: start; }
+.vision-column { min-width: 0; display: grid; gap: 16px; }
+.vision-column > aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.vision-column > aside > .project-objects { grid-column: 1 / -1; }
+.studio-grid > .rules-section { min-width: 0; margin: 0; }
+.rules-section > header { flex-wrap: wrap; gap: 10px; }
+.rules-section > header h2 { margin: 0; }
+.rule-heading { gap: 8px; padding: 12px; flex-wrap: wrap; }
+.rule-heading > input { min-width: 80px; flex: 1; width: 100px; font-size: 15px; }
+.rule-heading .switch { margin-left: auto; }
+.rule-edit { padding: 6px 9px; min-height: 32px; font-size: 12px; }
+.rule-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.6; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.summary-icons { display: flex; gap: 6px; color: var(--accent); flex-shrink: 0; }
+.rule-card [hidden] { display: none !important; }
+.rule-body { grid-template-columns: minmax(0, 1fr); }
+.rule-body > .condition { border-right: 0; border-bottom: 1px dashed var(--line); }
+.rule-body > div { padding: 16px; min-width: 0; }
+.rule-body .eyebrow { margin-bottom: 12px; }
+.action-card { padding: 10px; gap: 6px; grid-template-columns: 12px 12px 24px minmax(0, 1fr); }
+.action-fields { min-width: 0; gap: 8px; }
+.action-fields label { flex-wrap: wrap; }
+.action-fields select { max-width: 100%; }
+.action-tools { grid-column: 4; justify-content: flex-end; }
+.action-icon { display: inline-flex; align-items: center; justify-content: center; padding: 3px; width: 24px; height: 30px; }
+.compact-advanced { margin-top: 12px; font-size: 12px; }
+.compact-advanced > summary { cursor: pointer; color: var(--muted); padding: 8px 0; font-weight: 600; }
+.hardware-advanced .finch-photo-frame { height: 110px; margin: 8px 0; border-radius: 8px; }
+.hardware-advanced .finch-photo { object-fit: contain; transform: none; }
+.hardware-advanced > button { margin-top: 10px; width: 100%; }
+.model-body, .hardware-test { padding: 14px; }
+.sensor-inputs { padding: 0 14px 14px; }
+.sensor-inputs label { flex-wrap: wrap; }
+.vision-column select, .vision-column input { max-width: 100%; min-width: 0; }
+.camera-stage { aspect-ratio: 16 / 10; }
+.camera-controls { flex-wrap: wrap; }
+.project-bar { margin-bottom: 18px; }
+.workflow { margin-bottom: 12px; }
+.rule-card { margin-bottom: 12px; }
+@media (max-width: 1050px) {
+  .studio-grid { grid-template-columns: minmax(0, 1fr); }
+  .vision-column { display: contents; }
+  .studio-grid .camera-panel { grid-row: 1; }
+  .studio-grid > .rules-section { grid-row: 2; }
+  .vision-column > aside { grid-row: 3; }
+}
+@media (max-width: 600px) {
+  .vision-column > aside { grid-template-columns: minmax(0, 1fr); }
+  .rule-heading .switch { font-size: 11px; }
+  .rule-body > div { padding: 12px; }
+  .action-card { grid-template-columns: 12px minmax(0, 1fr); }
+  .action-card > .action-index, .action-card > .action-icon { display: none; }
+  .action-tools { grid-column: 2; }
+  .summary-icons { display: none; }
+}
+.rule-heading { height: auto; min-height: 48px; }
+.rules-section > .section-heading { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
+.rules-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.rules-controls button { padding: 9px 12px; }
+.rule-card > div > p[role=status] { margin: 12px 16px; color: var(--accent); }
+main { max-width: 1800px; padding-top: 20px; }
+.project-bar { gap: 12px; margin-bottom: 14px; }
+.breadcrumb { margin-bottom: 6px; }
+.project-bar p { margin-bottom: 0; }
+.workflow { padding-top: 12px; padding-bottom: 12px; }
+.setup-guidance { margin-bottom: 12px; }
+.action-card { display: grid; }
+.vision-column > aside { align-items: start; }
+.camera-empty .viewfinder { margin-bottom: 12px; }
+.camera-empty h3 { font-size: clamp(22px, 2vw, 30px); }
+.summary-icons { max-width: 90px; overflow: hidden; }
+.summary-icons svg { flex-shrink: 0; }
+/* v0.9.2: compact vision tools alongside the primary rule-building workspace. */
+.studio-grid { grid-template-columns: minmax(340px, .72fr) minmax(0, 1.28fr); gap: 16px; }
+.topbar { min-height: 58px; padding-block: 8px; }
+main { padding-top: 12px; }
+.project-bar { margin-bottom: 10px; }
+.title-line input { font-size: clamp(24px, 2.2vw, 34px); }
+.breadcrumb { margin-bottom: 4px; }
+.project-bar p { margin-top: 4px; font-size: 12px; }
+.workflow { padding: 8px 14px; margin-bottom: 8px; }
+.setup-guidance { min-height: 1.5em; margin: 0 0 10px; font-size: 12px; }
+.notice { padding: 9px 12px; margin-bottom: 12px; }
+.vision-column { gap: 10px; }
+.panel-heading { padding: 10px 12px; min-height: 42px; height: auto; gap: 8px; flex-wrap: wrap; }
+.panel-heading h2 { font-size: 14px; }
+.camera-size-toggle { font-size: 11px; padding: 5px 7px; min-height: 28px; margin-left: auto; }
+.camera-panel .status { font-size: 10px; }
+.camera-source-controls { padding: 10px; gap: 8px; }
+.camera-source-controls label { font-size: 12px; min-width: 130px; }
+.camera-source-controls select, .camera-source-controls input[type=url] { font-size: 12px; padding: 7px; }
+.camera-compact .camera-stage { height: 240px; aspect-ratio: auto; }
+.camera-expanded .camera-stage { height: auto; min-height: 360px; aspect-ratio: 4 / 3; }
+.camera-empty { padding: 16px; }
+.camera-empty .viewfinder { width: 44px; height: 36px; margin-bottom: 4px; }
+.camera-empty .viewfinder svg { width: 24px; }
+.camera-empty h3 { font-size: 21px; margin: 8px 0 4px; }
+.camera-empty p { margin: 4px 0 8px; font-size: 11px; }
+.camera-empty .primary { padding: 8px 12px; min-height: 32px; font-size: 12px; }
+.camera-empty .demo-link { margin-top: 6px; font-size: 10px; }
+.privacy-caption { font-size: 9px; }
+.preview-toolbar { padding: 8px 10px; flex-wrap: wrap; }
+.vision-column > aside { gap: 10px; }
+.model-body, .hardware-test { padding: 10px; }
+.hardware-test p { margin: 4px 0 8px; }
+.sensor-inputs { padding: 0 10px 10px; }
+.sensor-inputs label { margin: 5px 0; }
+.compact-advanced { margin-top: 6px; }
+.project-objects { padding: 12px; }
+.project-objects h3 { margin: 0 0 8px; font-size: 13px; }
+.rules-section { padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 12px; }
+.rules-section > .section-heading { gap: 6px; margin-bottom: 8px; }
+.rules-section .section-heading h2 { font-size: 17px; margin: 0; }
+.rules-section .section-heading p { font-size: 11px; margin: 5px 0; }
+.rules-controls button { font-size: 12px; padding: 7px 10px; min-height: 32px; }
+.rule-heading { padding: 8px 10px; min-height: 40px; }
+.rule-summary { padding: 8px 12px; font-size: 12px; }
+.rule-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 10px; align-items: start; }
+.rule-body > .condition, .rule-body > .actions { padding: 10px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface); }
+.rule-body > .actions { border-left-color: var(--success); }
+.rule-body .eyebrow { display: block; margin-bottom: 8px; font-size: 9px; }
+.rule-body .sentence { flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 12px; }
+.rule-body .sensor-condition { padding: 8px; background: var(--surface-soft); border-radius: 6px; border: 1px solid var(--line); }
+.rule-body .then-label { margin-bottom: 8px; }
+.rule-body .action-card { background: var(--surface-soft); grid-template-columns: 10px 20px minmax(0, 1fr); padding: 8px; }
+.rule-body .action-index { display: none; }
+.rule-body .action-tools { grid-column: 3; }
+.rule-body .action-fields { display: flex; flex-direction: column; align-items: stretch; }
+.rule-body .action-fields select { width: 100%; min-width: 0; font-size: 12px; }
+.rule-body .action-fields label { font-size: 11px; gap: 5px; }
+.rule-body .action-fields input[type=number] { width: 70px; padding: 6px; }
+.rule-body .timing { gap: 6px; }
+.rule-body .confidence { margin: 12px 0; }
+.rule-body .trigger-pill { margin: 8px 0; }
+.rule-body details { font-size: 11px; }
+.rule-body .add-action { padding: 8px; }
+@media (max-width: 1200px) and (min-width: 1051px) { .rule-body { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1050px) { .studio-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+ .rule-body { grid-template-columns: minmax(0, 1fr); }
+ .rule-body .action-card { grid-template-columns: 10px minmax(0, 1fr); }
+ .rule-body .action-tools { grid-column: 2; }
+ .camera-expanded .camera-stage { min-height: 300px; }
+ .camera-compact .camera-stage { height: 250px; }
+}
+.project-bar { padding-block: 0; }
+.workflow button { padding-block: 5px; }
+.selection-drawer { border-bottom: 1px solid var(--line); }
+.selection-drawer > summary { cursor: pointer; padding: 8px 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.detection-strip { padding: 8px 10px; min-height: 0; }
+.rule-body .confidence input { margin-top: 5px; }
+.rule-body .condition details { margin-top: 5px; }
+.rule-body .trigger-pill { padding: 4px 6px; }
+/* Keep the device header and a complete simple rule in a laptop-height workspace. */
+.camera-compact .camera-stage { height: 200px; }
+.camera-compact .camera-empty .viewfinder { display: none; }
+.rule-card:has(.rule-edit[aria-expanded=true]) > .rule-summary { display: none; }
+@media (max-width: 600px) { .camera-compact .camera-stage { height: 230px; } }
+.camera-compact .camera-empty { bottom: 24px; padding: 6px 12px; }
+.camera-compact .camera-empty h3 { font-size: 18px; }
+.camera-compact .camera-empty .demo-link { min-height: 22px; padding: 3px 8px; margin-top: 3px; }
+.camera-compact .privacy-caption { bottom: 3px; font-size: 8px; pointer-events: none; }
+/* Empty toolbar space must not intercept preview controls beneath it. */
+.camera-stage .selection-controls { pointer-events: none; }
+.camera-stage .selection-controls > * { pointer-events: auto; }
+/* Viewport workspace: setup and creation own the available desktop space. */
+.workspace-secondary { min-width: 0; }
+.workspace-secondary .live-diagnostics { margin: 0 0 10px; }
+.workspace-secondary .event-log { margin: 0; }
+.workspace-secondary footer { margin: 12px 0; padding: 0; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 1051px) {
+  .app-shell { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  .app-shell > .topbar { flex: 0 0 auto; }
+  .app-shell > main { flex: 1 1 auto; min-height: 0; width: 100%; margin: 0 auto; padding-bottom: 12px; display: flex; flex-direction: column; }
+  .app-shell > main > :not(.studio-grid) { flex: 0 0 auto; }
+  .studio-grid { flex: 1 1 auto; min-height: 0; grid-template-columns: minmax(0, 36fr) minmax(0, 64fr); align-items: stretch; overflow: hidden; }
+  .vision-column { min-height: 0; overflow-y: auto; overflow-x: hidden; align-content: start; padding-right: 4px; scrollbar-gutter: stable; }
+  .studio-grid > .rules-section { min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; background: radial-gradient(var(--line) .7px, transparent .8px) 0 0 / 16px 16px, var(--surface-soft); }
+  .rules-section > .section-heading { position: sticky; top: -12px; z-index: 5; background: var(--surface-soft); padding: 10px 0; }
+  .app-shell > .safety-bar { position: static; flex: 0 0 auto; width: 100%; }
+  .workspace-secondary .log-lines { max-height: none; }
+}
+@media (min-width: 1051px) and (max-width: 1250px) {
+  .vision-column > aside { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1050px) {
+  .workspace-secondary { grid-row: 4; }
+  .app-shell { min-height: 100dvh; }
+}
+@media (min-width: 1051px) {
+  .vision-column { grid-auto-rows: max-content; }
+}
+/* One-open setup accordion. Hidden content remains mounted. */
+.vision-column > aside { display: flex; flex-direction: column; gap: 0; }
+.setup-section { width: 100%; min-width: 0; border-bottom: 1px solid var(--line); background: var(--surface); }
+.setup-section:first-child { border-radius: 8px 8px 0 0; }
+.setup-section:last-child { border-radius: 0 0 8px 8px; }
+.setup-section-heading { width: 100%; min-height: 48px; display: flex; justify-content: flex-start; gap: 8px; border: 0; border-radius: 0; padding: 8px 10px; box-shadow: none; text-align: left; background: transparent; }
+.setup-section-heading > svg { flex-shrink: 0; color: var(--accent); }
+.setup-section-title { font-size: 13px; font-weight: 650; flex-shrink: 0; }
+.setup-section-status { min-width: 0; flex: 1; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; text-align: right; color: var(--muted); font-size: 12px; }
+.setup-section-body { padding: 8px; border-top: 1px solid var(--line); }
+.setup-section-body[hidden] { display: none !important; }
+.setup-section-body .project-objects, .setup-section-body .live-diagnostics, .setup-section-body .event-log { box-shadow: none; border: 0; margin: 0; padding: 8px; }
+.setup-section-body .project-objects > h3 { display: none; }
+.setup-section-body .diagnostics-sections { margin-top: 0; }
+.setup-section-body .sensor-inputs { padding: 0 6px 6px; border: 0; }
+@media (max-width: 1250px) { .setup-section-title { flex-shrink: 1; } }

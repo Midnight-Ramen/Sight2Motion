@@ -9,7 +9,7 @@ it('keeps one existing progression and navigates every step', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
   expect(app.match(/aria-label="Setup steps"/g)).toHaveLength(1);
   for (const id of ['camera-panel', 'model-panel', 'robot-panel', 'rules', 'play-controls']) {
-    expect(app).toContain(`focusSetupSection('${id}')`);
+    expect(app).toContain(`${['model-panel', 'robot-panel'].includes(id) ? 'openSetup' : 'focusSetupSection'}('${id}')`);
     expect(app).toContain(`id="${id}"`);
   }
   const section = { scrollIntoView: vi.fn(), focus: vi.fn() };

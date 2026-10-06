@@ -1,3 +1,4 @@
+import { openSetup } from './setup-ui.mjs';
 import { chromium, expect } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 
@@ -14,11 +15,14 @@ await page.route('http://127.0.0.1:30061/**', route => {
 });
 try {
   await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5174');
-  const sensors = page.getByRole('region', { name: 'Finch Sensors', exact: true });
+  const sensors = page.getByRole('region', { name: 'Finch Sensors', exact: true, includeHidden: true });
   await expect(sensors).toContainText('Connect Finch to read its sensors.');
   await expect(sensors).toContainText('Heading: No data — calibration status unavailable');
+  await openSetup(page, 'Sensors');
   await sensors.getByLabel('Distance', { exact: true }).check();
+  await openSetup(page, 'Sensors');
   await sensors.getByLabel('Left Line', { exact: true }).check();
+  await openSetup(page, 'Sensors');
   await sensors.getByLabel('Right Line', { exact: true }).check();
   await expect(page.getByLabel('Input 1 sensor')).toHaveCount(0);
   await page.getByLabel('Condition source').selectOption('sensor');
@@ -27,14 +31,19 @@ try {
   await page.getByLabel('Sensor condition 1 value').fill('15');
   await expect(page.getByLabel('Sensor condition 1 input')).not.toContainText('Heading');
   await page.getByLabel('Action 1 type', { exact: true }).selectOption('stop');
+  await openSetup(page, 'Your robot');
   await page.getByRole('button', { name: 'Connect Finch 2 A', exact: true }).click();
   await expect(sensors).toContainText('37 cm');
   // Sensor-only Play works without camera, demo, model or detections.
   await expect(page.getByRole('button', { name: 'Play rules', exact: true })).toBeEnabled();
-  await page.getByText('Live Diagnostics', { exact: true }).click();
+  await openSetup(page, 'Live diagnostics');
   await page.getByRole('button', { name: 'Play rules', exact: true }).click();
   await expect(page.getByLabel('Rule diagnostics')).toContainText('FALSE');
   const stops = () => paths.filter(path => path === '/hummingbird/out/stopall/A').length;
+  // Collapsing is presentation-only: the running sensor rule must still fire.
+  await page.locator('.rule-card').first().getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.locator('#play-controls').getByRole('button', { name: 'Running', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Condition source')).toBeHidden();
   const before = stops(); distance = '10';
   await expect.poll(stops).toBeGreaterThan(before);
   await expect(page.getByLabel('Rule diagnostics')).toContainText('TRUE');
@@ -43,6 +52,7 @@ try {
   await expect(page.getByLabel('Rule diagnostics')).toContainText('Waiting');
   await expect(sensors).toContainText('Waiting for Distance data');
   await page.getByRole('button', { name: 'Stop rules', exact: true }).click();
+  await page.locator('.rule-card').first().getByRole('button', { name: 'Edit', exact: true }).click();
   distance = '37';
   await page.getByLabel('Condition source').selectOption('vision-sensor');
   await page.getByLabel('Detected class', { exact: true }).selectOption('person');

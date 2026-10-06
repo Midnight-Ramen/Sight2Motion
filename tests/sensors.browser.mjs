@@ -1,3 +1,4 @@
+import { openSetup } from './setup-ui.mjs';
 import { chromium, expect } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -13,10 +14,13 @@ await page.route('http://127.0.0.1:30061/**', route => {
 });
 try {
   await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5174');
+  await openSetup(page, 'Your robot');
   await page.getByLabel('Robot', { exact: true }).selectOption('hummingbird');
   await page.getByRole('button', { name: 'Add rule', exact: true }).click();
+  await openSetup(page, 'Sensors');
   await page.getByLabel('Input 1 sensor').selectOption('distance');
   await expect(page.getByLabel('Input 4 sensor')).toHaveCount(0);
+  await openSetup(page, 'Your robot');
   await page.getByRole('button', { name: 'Connect Hummingbird Bit A', exact: true }).click();
   await expect(page.getByLabel('Hummingbird sensor inputs')).toContainText('35 cm');
   await page.getByLabel('Condition source').selectOption('vision-sensor');
@@ -51,6 +55,7 @@ try {
   expect(saved.rules[0].sensorConditions[0].value).toBe(25);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/sensors.png', fullPage: true });
+  await openSetup(page, 'Your robot');
   await page.getByLabel('Robot', { exact: true }).selectOption('finch');
   await expect(page.getByLabel('Sensor condition 1 input')).toHaveCount(0);
   await expect(page.getByLabel('Input 1 sensor')).toHaveCount(0);
@@ -62,6 +67,8 @@ try {
   });
   await expect(page.getByLabel('Robot', { exact: true })).toHaveValue('hummingbird');
   await expect(page.getByLabel('Sensor condition 1 value')).toHaveValue('25');
+  await openSetup(page, 'Your robot');
+  await page.getByText('Hardware tests & reset', { exact: true }).click();
   await page.getByRole('button', { name: 'Reset project', exact: true }).click();
   await expect(page.getByLabel('Sensor condition 1 input')).toHaveCount(0);
   await expect(page.getByLabel('Input 1 sensor')).toHaveValue('');

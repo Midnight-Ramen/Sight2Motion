@@ -1,3 +1,4 @@
+import { SetupSection } from './components/SetupSection';
 import { cameraFailure, modelGuidance, detectionEmpty } from './core/StudentGuidance';
 import { LiveDiagnostics } from './components/LiveDiagnostics';
 import { FOLLOW_STABILITY } from './core/FollowController';
@@ -221,6 +222,10 @@ export default function App() {
   }, [modalOpen]);
   const [customTracked, setCustomTracked] = useState<TrackedTarget | null>(null);
   const appearanceVisible = customTracked?.detectorLabel === 'appearance' && customTracked.state === 'TRACKING';
+  const [setupOpen, setSetupOpen] = useState<string | null>(null);
+  const toggleSetup = (id: string) => setSetupOpen(current => current === id ? null : id);
+  const openSetup = (id: string) => { setSetupOpen(id); requestAnimationFrame(() => focusSetupSection(id)); };
+  const [cameraExpanded, setCameraExpanded] = useState(false);
   const [usableFrame, setUsableFrame] = useState(false);
   const [, setDiagnosticNow] = useState(() => performance.now());
   useEffect(() => {
@@ -763,7 +768,7 @@ export default function App() {
     }
   }
   return (
-    <>
+    <div className="app-shell">
       <header className="topbar">
         <a href="#" className="brand">
           <span className="brand-icon">
@@ -865,14 +870,14 @@ export default function App() {
               label: 'Load AI model',
               done: readiness.vision,
               icon: Sparkles,
-              action: () => focusSetupSection('model-panel'),
+              action: () => openSetup('model-panel'),
             },
             {
               label: 'Connect robot',
               done: readiness.robot,
               icon: Radio,
               action: () =>
-                focusSetupSection('robot-panel'),
+                openSetup('robot-panel'),
             },
             {
               label: 'Add Rule',
@@ -903,12 +908,14 @@ export default function App() {
           </div>
         )}
         <div className="studio-grid">
-          <section className="panel camera-panel" id="camera-panel" tabIndex={-1}>
+          <div className="vision-column" role="region" aria-label="Vision and setup" tabIndex={0}>
+          <section className={`panel camera-panel ${cameraExpanded ? 'camera-expanded' : 'camera-compact'}`} id="camera-panel" tabIndex={-1}>
             <div className="panel-heading">
               <h2>
                 <Camera size={18} />
                 Vision preview
               </h2>
+              <button className="camera-size-toggle" aria-expanded={cameraExpanded} aria-controls="camera-view" onClick={() => setCameraExpanded(value => !value)}>{cameraExpanded ? 'Collapse camera' : 'Expand camera'}</button>
               <span className={`status ${cameraOn || demo ? 'active' : ''}`}>
                 <i />
                 {demo ? 'Demo scene' : cameraSource === 'network' ? cameraBusy ? 'Connecting' : cameraError ? 'Error' : cameraOn ? 'Connected' : 'Disconnected' : cameraOn ? 'Camera live' : 'Camera off'}
@@ -939,7 +946,7 @@ export default function App() {
                   <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
               </>}
             </div>
-            <div className="camera-stage">
+            <div className="camera-stage" id="camera-view">
               <video ref={video} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} muted playsInline className={cameraSource === 'local' && cameraOn && !demo ? '' : 'hidden'} />
               <img ref={networkImage} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn && !demo ? '' : 'hidden'} />
               {!cameraOn && !demo && (
@@ -1019,7 +1026,7 @@ export default function App() {
                 Frames are processed in this browser. No video is uploaded.
               </div>
             </div>
-            <div ref={setFollowContainer} />
+            <details className="selection-drawer"><summary>Selected object &amp; Follow controls</summary><div ref={setFollowContainer} /></details>
             <div className="preview-toolbar">
               <span>
                 <ScanLine size={16} />
@@ -1064,17 +1071,7 @@ export default function App() {
             </div>
           </section>
           <aside>
-            <section className="panel robot-panel" id="robot-panel" tabIndex={-1}>
-              <div className="panel-heading">
-                <h2>
-                  <Radio size={18} />
-                  Your robot
-                </h2>
-                <span className={`status ${connected ? 'active' : ''}`}>
-                  <i />
-                  {connected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
+            <SetupSection id="robot-panel" title="Your robot" summary={`${ROBOTS[robotMode].name} · ${connected ? 'Connected' : 'Disconnected'}`} icon={<Radio size={18} />} open={setupOpen === 'robot-panel'} onToggle={() => toggleSetup('robot-panel')}>
               <div className="robot-select">
                 <label htmlFor="robot-type">Robot</label>
                 <select
@@ -1096,17 +1093,8 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}
-                onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />
-            </section>
-            <section className="panel model-panel" id="model-panel" tabIndex={-1}>
-              <div className="panel-heading">
-                <h2>
-                  <Sparkles size={17} />
-                  AI model
-                </h2>
-                <span className="tiny-tag">LOCAL</span>
-              </div>
+            </SetupSection>
+            <SetupSection id="model-panel" title="AI model" summary={`${providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'} · ${modelBusy ? 'Loading' : modelReady ? 'Ready' : 'Not loaded'}`} icon={<Sparkles size={18} />} open={setupOpen === 'model-panel'} onToggle={() => toggleSetup('model-panel')}>
               <div className="model-body">
                 <label>AI model
                   <select aria-label="AI model" value={providerKind} onChange={e => changeProvider(e.target.value as VisionProviderKind)}>
@@ -1159,6 +1147,7 @@ export default function App() {
                   ✓ Custom classes · ✓ Confidence rules · ✓ Robot actions<br />
                   — Bounding boxes · — Location · — Near / Far
                 </small>}
+                <details className="compact-advanced"><summary>Advanced vision settings</summary>
                 <span className="backend">{demo ? 'Demo bypasses AI inference' : backend}</span>
                 {visionCapabilities.boundingBoxes && <label className="slider-label">
                   Confidence threshold <b>{Math.round(project.vision.confidence * 100)}%</b>
@@ -1215,8 +1204,14 @@ export default function App() {
                     </select>
                   </label>}
                 </div>
+                </details>
               </div>
-            </section>
+            </SetupSection>
+            <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
+              <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}
+                onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />
+            </SetupSection>
+            <SetupSection id="objects-panel" title="Objects for this project" summary={[...project.selectedClasses, ...(project.customObjects ?? [])].join(', ') || 'None selected'} icon={<ScanLine size={18} />} open={setupOpen === 'objects-panel'} onToggle={() => toggleSetup('objects-panel')}>
             {!!project.customObjects?.length && <section className="project-objects" aria-label="Custom selected objects">
               <h3>My selected objects</h3>
               <div className="project-object-chips">{project.customObjects.map(name => <span className="project-object-chip" key={name}>{name} - {customTracked?.detectorLabel === 'appearance' && customTracked.displayName === name ? customTracked.state : 'Select to track'}
@@ -1228,11 +1223,52 @@ export default function App() {
               rules={project.rules} detections={detections} threshold={project.vision.confidence}
               live={cameraOn && modelReady && !demo}
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
-          </aside>
-        </div>
-        <LiveDiagnostics project={project} detections={detections} target={customTracked} sensors={sensorState} networkCamera={camera.networkDiagnostics}
+            </SetupSection>
+            <SetupSection id="diagnostics-panel" title="Live diagnostics" summary={ai ? 'Rules running' : 'Rules paused'} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'diagnostics-panel'} onToggle={() => toggleSetup('diagnostics-panel')}>
+        <LiveDiagnostics embedded project={project} detections={detections} target={customTracked} sensors={sensorState} networkCamera={camera.networkDiagnostics}
           ruleResults={rules.diagnostics} follow={actions.followSnapshot} camera={cameraOn && usableFrame}
           model={modelReady} robot={connected} running={ai} fps={measuredFps} demo={demo} />
+        <section className="event-log">
+          <button className="log-heading" onClick={() => setShowLog(!showLog)}>
+            <span>
+              <Square size={14} />
+              Activity log <b>{logs.length}</b>
+            </span>
+            <span>
+              {showLog ? 'Hide' : 'Show'}
+              <ChevronDown size={14} />
+            </span>
+          </button>
+          {showLog && (
+            <div className="log-lines" aria-live="polite">
+              {logs.length ? (
+                logs.slice(0, 8).map((l, i) => (
+                  <div key={`${l.time}-${i}`}>
+                    <time>{l.time}</time>
+                    <span className="log-dot" />
+                    {l.text}
+                  </div>
+                ))
+              ) : (
+                <p>Your robot’s story will appear here. Connect it to get started.</p>
+              )}
+            </div>
+          )}
+        </section>
+            </SetupSection>
+          </aside>
+          <div className="workspace-secondary">
+        <footer>
+          <span>
+            <Aperture size={15} />
+            Created by Jonathan Delgado
+          </span>
+          <span>
+            Milestone 01 <span>·</span> See → Think → Do
+          </span>
+        </footer>
+          </div>
+          </div>
         <section id="rules" className="rules-section" tabIndex={-1}>
           <div className="section-heading">
             <div>
@@ -1301,42 +1337,7 @@ export default function App() {
             </span>
           </div>
         </section>
-        <section className="event-log">
-          <button className="log-heading" onClick={() => setShowLog(!showLog)}>
-            <span>
-              <Square size={14} />
-              Activity log <b>{logs.length}</b>
-            </span>
-            <span>
-              {showLog ? 'Hide' : 'Show'}
-              <ChevronDown size={14} />
-            </span>
-          </button>
-          {showLog && (
-            <div className="log-lines" aria-live="polite">
-              {logs.length ? (
-                logs.slice(0, 8).map((l, i) => (
-                  <div key={`${l.time}-${i}`}>
-                    <time>{l.time}</time>
-                    <span className="log-dot" />
-                    {l.text}
-                  </div>
-                ))
-              ) : (
-                <p>Your robot’s story will appear here. Connect it to get started.</p>
-              )}
-            </div>
-          )}
-        </section>
-        <footer>
-          <span>
-            <Aperture size={15} />
-            Created by Jonathan Delgado
-          </span>
-          <span>
-            Milestone 01 <span>·</span> See → Think → Do
-          </span>
-        </footer>
+        </div>
       </main>
       <div className="safety-bar">
         <div>
@@ -1497,6 +1498,6 @@ export default function App() {
           </section>
         </div>
       )}
-    </>
+    </div>
   );
 }

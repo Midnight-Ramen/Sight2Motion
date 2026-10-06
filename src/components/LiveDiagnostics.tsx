@@ -7,6 +7,7 @@ import { detectionRegion } from '../core/DetectionRegions';
 import type { NetworkCameraDiagnostics } from '../core/NetworkCameraSource';
 
 interface Props {
+  embedded?: boolean;
   project: Project; detections: VisionResult[]; target: TrackedTarget | null;
   sensors: SensorState; ruleResults: Readonly<Record<string, 'TRUE' | 'FALSE' | 'Waiting'>>;
   follow: ActionEngine['followSnapshot']; camera: boolean; model: boolean; robot: boolean;
@@ -15,14 +16,15 @@ interface Props {
 }
 const percent = (value: number) => Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—';
 export function LiveDiagnostics({ project, detections, target, sensors, ruleResults, follow,
-  camera, model, robot, running, fps, demo, networkCamera, now = performance.now() }: Props) {
+  camera, model, robot, running, fps, demo, networkCamera, embedded = false, now = performance.now() }: Props) {
   const classifier = project.visionProvider === 'teachable-machine';
   const items = [...detections].filter(d => classifier || project.selectedClasses.includes(d.className))
     .sort((a, b) => b.confidence - a.confidence);
   const showFollow = project.robotType === 'finch' && (target || project.rules.some(r => r.actions.some(a => a.kind === 'move' && a.mode === 'follow')));
   const wheels = follow.active ? follow.wheels : null;
-  return <details className="live-diagnostics panel">
-    <summary>Live Diagnostics</summary>
+  const Container = embedded ? 'div' : 'details';
+  return <Container className="live-diagnostics panel">
+    {!embedded && <summary>Live Diagnostics</summary>}
     <div className="diagnostics-sections">
       {project.cameraSource === 'network' && networkCamera && <section aria-label="Network camera diagnostics"><h3>Network Camera</h3>
         <p>{networkCamera.status}</p>
@@ -74,5 +76,5 @@ export function LiveDiagnostics({ project, detections, target, sensors, ruleResu
         <p>AI: {model ? 'Ready' : 'Not ready'}</p><p>Robot: {robot ? 'Connected' : 'Disconnected'}</p><p>Inference: {fps.toFixed(1)} FPS{demo ? ' (simulated)' : ''}</p>
       </section>
     </div>
-  </details>;
+  </Container>;
 }

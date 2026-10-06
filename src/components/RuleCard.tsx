@@ -1,4 +1,7 @@
-import { ArrowDown, ArrowUp, GripVertical, Lightbulb, Plus, Trash2 } from 'lucide-react';
+import { useId, useState } from 'react';
+import { ActionIcon } from './ActionIcon';
+import { RuleSummary } from './RuleSummary';
+import { ArrowDown, ArrowUp, GripVertical, ChevronDown, Plus, Trash2 } from 'lucide-react';
 import {
   actionDefinitions,
   ruleSource,
@@ -42,6 +45,8 @@ export function RuleCard({
   onDelete: () => void;
   capabilities: ActionKind[];
 }) {
+  const [expanded, setExpanded] = useState(true);
+  const editorId = useId();
   const source = ruleSource(rule);
   const sensorOnly = source === 'sensor';
   const patch = (p: Partial<Rule>) => onChange({ ...rule, ...p });
@@ -80,7 +85,12 @@ export function RuleCard({
         <button className="icon-button" aria-label={`Delete rule ${index + 1}`} onClick={onDelete}>
           <Trash2 size={16} />
         </button>
+        <button className="rule-edit" aria-expanded={expanded} aria-controls={editorId} onClick={() => setExpanded(!expanded)}>
+          {expanded ? 'Done' : 'Edit'}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} />
+        </button>
       </div>
+      <RuleSummary rule={rule} sensors={sensors} />
+      <div id={editorId} hidden={!expanded}>
       {guidance && compatibleRule(rule, visionCapabilities) && <p role="status">{guidance}</p>}
       <div className="rule-body">
         <div className="condition">
@@ -238,7 +248,7 @@ export function RuleCard({
             >
               <GripVertical size={16} className="grip" />
               <span className="action-index">{i + 1}</span>
-              <Lightbulb size={18} className="action-icon" />
+              <span className="action-icon"><ActionIcon action={a} /></span>
               <div className="action-fields">
                 <select
                   aria-label={`Action ${i + 1} type`}
@@ -434,6 +444,7 @@ export function RuleCard({
             Add action
           </button>
         </div>
+      </div>
       </div>
     </article>
   );
