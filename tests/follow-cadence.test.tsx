@@ -93,5 +93,7 @@ it('Follow template keeps 20 percent through selection, parsing and the rule edi
   expect(project.rules[0].actions[0].followSpeed).toBe(20);
   const html = renderToStaticMarkup(<RuleCard rule={project.rules[0]} index={0} onChange={() => {}} onDelete={() => {}}
     capabilities={['move']} selectedClasses={['person']} />);
-  expect(html).toMatch(/Follow speed %<input[^>]*value="20"/);
+  const controls = (html.match(/<input[^>]+>/g) ?? []).filter(input => input.includes('aria-label="Follow speed %'));
+  expect(controls).toHaveLength(2);
+  for (const input of controls) expect(input).toContain('value="20"');
 });

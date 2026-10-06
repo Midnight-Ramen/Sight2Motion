@@ -23,9 +23,9 @@ try {
  await page.getByRole('button',{name:'Sensors',exact:true}).click();
  await expect(page.getByRole('combobox',{name:'AI model',exact:true})).toBeHidden();
  await expect(page.getByRole('region',{name:'Finch Sensors',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'Live diagnostics',exact:true}).click();
+ await page.getByRole('button',{name:'Diagnostics',exact:true}).click();
  await expect(page.locator('#diagnostics-panel .event-log')).toBeVisible();
- await page.getByRole('button',{name:'Live diagnostics',exact:true}).click();
+ await page.getByRole('button',{name:'Diagnostics',exact:true}).click();
  const after = await save();
  expect(after.rules).toEqual(before.rules);
  expect(after.sensorConfiguration).toEqual(before.sensorConfiguration);

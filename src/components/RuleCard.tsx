@@ -1,3 +1,4 @@
+import { NumericSlider } from './NumericSlider';
 import { useId, useState } from 'react';
 import { ActionIcon } from './ActionIcon';
 import { RuleSummary } from './RuleSummary';
@@ -137,7 +138,7 @@ export function RuleCard({
           {(rule.distance ?? 'any') !== 'any' && <div>
             <label className="confidence">
               Near when object fills at least <b>{Math.round((rule.nearThreshold ?? 0.12) * 100)}%</b>
-              <input aria-label="Near threshold" type="range" min={3} max={40} step={1}
+              <NumericSlider aria-label="Near threshold" type="range" min={3} max={40} step={1}
                 value={Math.round((rule.nearThreshold ?? 0.12) * 100)}
                 onChange={e => patch({ nearThreshold: +e.target.value / 100 })} />
             </label>
@@ -149,7 +150,7 @@ export function RuleCard({
           </>}
           <label className="confidence">
             With confidence of at least <b>{Math.round(rule.confidence * 100)}%</b>
-            <input
+            <NumericSlider
               aria-label="Rule confidence"
               type="range"
               min={10}
@@ -270,11 +271,11 @@ export function RuleCard({
                   </select>
                 </label>}
                 {a.kind === 'singleLed' && <label>Brightness %
-                  <input aria-label={`Action ${i + 1} brightness`} type="number" min={0} max={100} value={a.brightness ?? 100}
+                  <NumericSlider aria-label={`Action ${i + 1} brightness`} type="number" min={0} max={100} value={a.brightness ?? 100}
                     onChange={e => updateAction(a.id, { brightness: Math.max(0, Math.min(100, +e.target.value)) })} />
                 </label>}
                 {a.kind === 'positionServo' && <label>Angle °
-                  <input aria-label={`Action ${i + 1} angle`} type="number" min={0} max={180} value={a.angle ?? 90}
+                  <NumericSlider aria-label={`Action ${i + 1} angle`} type="number" min={0} max={180} value={a.angle ?? 90}
                     onChange={e => updateAction(a.id, { angle: Math.max(0, Math.min(180, +e.target.value)) })} />
                 </label>}
                 {(a.kind === 'beak' || a.kind === 'tail' || a.kind === 'triLed') && (
@@ -334,15 +335,15 @@ export function RuleCard({
                     {a.mode === 'follow' && <>
                       <small>Follow already adjusts position and distance automatically.</small>
                       {!visionCapabilities.boundingBoxes && <small role="status">Follow requires a model with bounding boxes.</small>}
-                      <label>Follow speed %<input type="number" min={0} max={100} value={a.followSpeed ?? 35}
+                      <label>Follow speed %<NumericSlider aria-label="Follow speed %" type="number" min={0} max={100} value={a.followSpeed ?? 35}
                         onChange={e => updateAction(a.id, { followSpeed: Math.max(0, Math.min(100, +e.target.value)) })} /></label>
                       <label>Follow distance<select value={a.followDistance ?? 'medium'} onChange={e => updateAction(a.id, { followDistance: e.target.value as Action['followDistance'] })}>
                         <option value="close">Close</option><option value="medium">Medium</option><option value="far">Far</option>
                       </select></label>
                       <details><summary>Advanced</summary>
-                        <label>Steering sensitivity %<input type="number" min={0} max={100} value={a.steeringSensitivity ?? 50}
+                        <label>Steering sensitivity %<NumericSlider aria-label="Steering sensitivity %" type="number" min={0} max={100} value={a.steeringSensitivity ?? 50}
                           onChange={e => updateAction(a.id, { steeringSensitivity: Math.max(0, Math.min(100, +e.target.value)) })} /></label>
-                        <label>Center tolerance %<input type="number" min={0} max={50} value={Math.round((a.centerDeadZone ?? 0.15) * 100)}
+                        <label>Center tolerance %<NumericSlider aria-label="Center tolerance %" type="number" min={0} max={50} value={Math.round((a.centerDeadZone ?? 0.15) * 100)}
                           onChange={e => updateAction(a.id, { centerDeadZone: Math.max(0, Math.min(50, +e.target.value)) / 100 })} /></label>
                         <label>Lost target timeout (ms)<input type="number" min={100} max={3000} step={50} value={a.lostTargetTimeoutMs ?? 750}
                           onChange={e => updateAction(a.id, { lostTargetTimeoutMs: Math.max(100, Math.min(3000, +e.target.value)) })} /></label>
@@ -363,7 +364,7 @@ export function RuleCard({
                     </select>
                     <label>
                       Speed %
-                      <input
+                      <NumericSlider aria-label="Speed %"
                         type="number"
                         min={0}
                         max={100}

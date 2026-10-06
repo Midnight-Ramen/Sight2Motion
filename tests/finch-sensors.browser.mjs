@@ -36,7 +36,7 @@ try {
   await expect(sensors).toContainText('37 cm');
   // Sensor-only Play works without camera, demo, model or detections.
   await expect(page.getByRole('button', { name: 'Play rules', exact: true })).toBeEnabled();
-  await openSetup(page, 'Live diagnostics');
+  await openSetup(page, 'Diagnostics');
   await page.getByRole('button', { name: 'Play rules', exact: true }).click();
   await expect(page.getByLabel('Rule diagnostics')).toContainText('FALSE');
   const stops = () => paths.filter(path => path === '/hummingbird/out/stopall/A').length;
@@ -51,7 +51,7 @@ try {
   await expect(page.getByLabel('Sensor diagnostics')).toContainText('Distance: No data');
   await expect(page.getByLabel('Rule diagnostics')).toContainText('Waiting');
   await expect(sensors).toContainText('Waiting for Distance data');
-  await page.getByRole('button', { name: 'Stop rules', exact: true }).click();
+  await page.getByRole('button', { name: /STOP ROBOT/ }).click();
   await page.locator('.rule-card').first().getByRole('button', { name: 'Edit', exact: true }).click();
   distance = '37';
   await page.getByLabel('Condition source').selectOption('vision-sensor');

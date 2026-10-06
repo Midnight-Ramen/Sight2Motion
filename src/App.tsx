@@ -796,27 +796,20 @@ export default function App() {
             <CircleHelp size={19} />
           </button>
         </div>
-      </header>
-      <main>
-        <div className="project-bar">
+                <div className="project-bar">
           <div>
-            <div className="eyebrow breadcrumb">
-              YOUR WORKSPACE <span>/</span> UNTITLED COLLECTION
-            </div>
             <div className="title-line">
               <input
                 aria-label="Project name"
-                aria-describedby="project-name-help"
-                placeholder="Name Your Project"
+                placeholder="Click here to name your project"
                 size={Math.max(20, project.name.length + 2)}
                 onFocus={e => e.currentTarget.select()}
                 maxLength={100}
-                value={project.name}
+                value={project.name === 'Name Your Project' || project.name === 'My first vision project' ? '' : project.name}
                 onChange={(e) => edit({ ...project, name: e.target.value })}
               />
               <span className="save-status">{dirty ? 'Unsaved changes' : 'Local project'}</span>
             </div>
-            <p id="project-name-help">Click or tap the name above to name your project.</p>
           </div>
           <div className="project-buttons">
             <button
@@ -858,6 +851,9 @@ export default function App() {
             </details>
           </div>
         </div>
+
+      </header>
+      <main>
         <nav className="workflow" aria-label="Setup steps">
           {[
             {
@@ -920,31 +916,6 @@ export default function App() {
                 <i />
                 {demo ? 'Demo scene' : cameraSource === 'network' ? cameraBusy ? 'Connecting' : cameraError ? 'Error' : cameraOn ? 'Connected' : 'Disconnected' : cameraOn ? 'Camera live' : 'Camera off'}
               </span>
-            </div>
-            <div className="camera-source-controls">
-              <label>Camera Source
-                <select aria-label="Camera Source" value={cameraSource} onChange={e => switchCamera(e.target.value as 'local' | 'network')}>
-                  <option value="local">Laptop Camera</option>
-                  <option value="network">Network Camera</option>
-                </select>
-              </label>
-              <label>Mirror horizontally
-                <input type="checkbox" role="switch" aria-label="Mirror horizontally" checked={mirrorHorizontal}
-                  onChange={e => { ++loopVersion.current; pause(); consume([]); edit({ ...project, mirrorHorizontal: e.target.checked }); }} />
-              </label>
-              {cameraSource === 'network' && <>
-                <label>Network camera
-                  <select aria-label="Network camera" value={networkCameras.some(camera => camera.url === (project.networkCameraUrl ?? defaultNetworkCameraUrl)) ? (project.networkCameraUrl ?? defaultNetworkCameraUrl) : ''}
-                    onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }}>
-                    {networkCameras.map(camera => <option key={camera.url} value={camera.url}>{camera.name} — {new URL(camera.url).hostname}</option>)}
-                    <option value="">Use another camera…</option>
-                  </select>
-                </label>
-                <label>Stream URL<input aria-label="Stream URL" type="url" placeholder="http://your-camera.local/stream" value={project.networkCameraUrl ?? defaultNetworkCameraUrl}
-                  onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }} /></label>
-                {cameraOn || cameraBusy ? <button onClick={disconnectCamera}>Disconnect</button> :
-                  <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
-              </>}
             </div>
             <div className="camera-stage" id="camera-view">
               <video ref={video} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} muted playsInline className={cameraSource === 'local' && cameraOn && !demo ? '' : 'hidden'} />
@@ -1025,6 +996,31 @@ export default function App() {
                 <ShieldCheck size={13} />
                 Frames are processed in this browser. No video is uploaded.
               </div>
+            </div>
+            <div className="camera-source-controls">
+              <label>Camera Source
+                <select aria-label="Camera Source" value={cameraSource} onChange={e => switchCamera(e.target.value as 'local' | 'network')}>
+                  <option value="local">Laptop Camera</option>
+                  <option value="network">Network Camera</option>
+                </select>
+              </label>
+              <label>Mirror horizontally
+                <input type="checkbox" role="switch" aria-label="Mirror horizontally" checked={mirrorHorizontal}
+                  onChange={e => { ++loopVersion.current; pause(); consume([]); edit({ ...project, mirrorHorizontal: e.target.checked }); }} />
+              </label>
+              {cameraSource === 'network' && <>
+                <label>Network camera
+                  <select aria-label="Network camera" value={networkCameras.some(camera => camera.url === (project.networkCameraUrl ?? defaultNetworkCameraUrl)) ? (project.networkCameraUrl ?? defaultNetworkCameraUrl) : ''}
+                    onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }}>
+                    {networkCameras.map(camera => <option key={camera.url} value={camera.url}>{camera.name} — {new URL(camera.url).hostname}</option>)}
+                    <option value="">Use another camera…</option>
+                  </select>
+                </label>
+                <label>Stream URL<input aria-label="Stream URL" type="url" placeholder="http://your-camera.local/stream" value={project.networkCameraUrl ?? defaultNetworkCameraUrl}
+                  onChange={e => { disconnectCamera(); edit({ ...project, networkCameraUrl: e.target.value }); }} /></label>
+                {cameraOn || cameraBusy ? <button onClick={disconnectCamera}>Disconnect</button> :
+                  <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
+              </>}
             </div>
             <details className="selection-drawer"><summary>Selected object &amp; Follow controls</summary><div ref={setFollowContainer} /></details>
             <div className="preview-toolbar">
@@ -1224,7 +1220,7 @@ export default function App() {
               live={cameraOn && modelReady && !demo}
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
             </SetupSection>
-            <SetupSection id="diagnostics-panel" title="Live diagnostics" summary={ai ? 'Rules running' : 'Rules paused'} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'diagnostics-panel'} onToggle={() => toggleSetup('diagnostics-panel')}>
+            <SetupSection id="diagnostics-panel" title="Diagnostics" summary={ai ? 'Rules running' : 'Rules paused'} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'diagnostics-panel'} onToggle={() => toggleSetup('diagnostics-panel')}>
         <LiveDiagnostics embedded project={project} detections={detections} target={customTracked} sensors={sensorState} networkCamera={camera.networkDiagnostics}
           ruleResults={rules.diagnostics} follow={actions.followSnapshot} camera={cameraOn && usableFrame}
           model={modelReady} robot={connected} running={ai} fps={measuredFps} demo={demo} />
@@ -1276,13 +1272,10 @@ export default function App() {
                 <SlidersHorizontal size={20} />
                 Your AI rules <span className="count">{project.rules.length}</span>
               </h2>
-              <p role="status">{ai ? 'Running · Stop, then Play to test again with the object still visible.' : 'Paused · Press Play rules after making changes. Detection continues while paused.'}</p>
+              <p>Create rules to tell your robot what to do.</p><small role="status">{ai ? 'Running' : 'Paused'}</small>
             </div>
-            <div className="rules-controls" id="play-controls" tabIndex={-1}>
-              <button className="primary" disabled={ai || !readiness.play} aria-describedby={!readiness.play ? 'play-blocker' : undefined} onClick={toggleAI}>
-                <Play size={16} /> {ai ? 'Running' : 'Play rules'}
-              </button>
-              <button onClick={stop}><Square size={16} /> Stop rules</button>              <button
+            <div className="rules-controls">
+              <button
                 className="primary"
                 disabled={project.rules.length >= 50}
                 onClick={() => edit({ ...project, rules: [...project.rules, { ...makeRule(), className: project.selectedClasses[0], actions: [makeAction(ROBOTS[robotMode].actions[0])] }] })}
@@ -1339,7 +1332,11 @@ export default function App() {
         </section>
         </div>
       </main>
-      <div className="safety-bar">
+      <div className="safety-bar" id="play-controls" tabIndex={-1}>
+              <button className="primary" disabled={ai || !readiness.play} aria-describedby={!readiness.play ? 'play-blocker' : undefined} onClick={toggleAI}>
+                <Play size={16} /> {ai ? 'Running' : 'Play rules'}
+              </button>
+
         <div>
           <span className={`safety-dot ${ai ? 'on' : ''}`} />
           <b>{ai ? 'Your rules are listening' : 'You’re in control'}</b>
