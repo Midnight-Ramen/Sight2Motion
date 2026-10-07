@@ -471,3 +471,5 @@ label.mirror-control input { margin: 0; width: auto; }
 .manual-drive-pad .drive-right { grid-column: 3; grid-row: 2; }
 .manual-drive-pad button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); }
 .manual-drive small { display: block; color: var(--muted); font-size: 11px; }
+.home-controls { display: flex; gap: 8px; margin-bottom: 6px; }
+.manual-drive [aria-label="Encoder recording"] { margin-bottom: 8px; }

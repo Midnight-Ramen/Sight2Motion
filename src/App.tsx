@@ -70,7 +70,7 @@ import { FinchAdapter, type FinchStatus } from './core/FinchAdapter';
 import { RobotRouter } from './core/RobotRouter';
 import { HardwareTest } from './components/HardwareTest';
 import { SensorInputs } from './components/SensorInputs';
-import type { SensorState } from './core/Sensors';
+import { finchSensorDescriptor, type SensorState } from './core/Sensors';
 import { ruleSource } from './core/types';
 import './styles.css';
 import './theme.css';
@@ -115,6 +115,7 @@ export default function App() {
   const [sensorState, setSensorState] = useState<SensorState>({});
   const sensorRef = useRef<SensorState>({});
   const latestVision = useRef<{ items: VisionResult[]; updatedAt: number; capturedAt: number }>({ items: [], updatedAt: -Infinity, capturedAt: -Infinity });
+  const [manualStopRevision, setManualStopRevision] = useState(0);
   const [hardwareBusy, setHardwareBusy] = useState(false);
   const [followContainer, setFollowContainer] = useState<HTMLDivElement | null>(null);
   const [finchStatus, setFinchStatus] = useState<FinchStatus>({
@@ -258,6 +259,7 @@ export default function App() {
     rules.reset();
   };
   const pause = useCallback(() => {
+    setManualStopRevision(value => value + 1);
     aiRef.current = false;
     setAi(false);
     rules.reset();
@@ -338,9 +340,14 @@ export default function App() {
   useEffect(() => {
     sensorRef.current = {};
     setSensorState({});
-    if (!connected || !project.sensorConfiguration?.length) return;
+    if (!connected) return;
+    const inputs = [...(project.sensorConfiguration ?? [])];
+    if (robotMode === 'finch') for (const type of ['finchEncoderLeft', 'finchEncoderRight'] as const) {
+      if (!inputs.some(sensor => sensor.id === type)) inputs.push(finchSensorDescriptor(type));
+    }
+    if (!inputs.length) return;
     const provider = robotMode === 'finch' ? finch.sensors : hummingbird.sensors;
-    provider.start(project.sensorConfiguration ?? [], state => {
+    provider.start(inputs, state => {
       sensorRef.current = state;
       setSensorState(state);
     });
@@ -1187,7 +1194,7 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'finch' && <ManualDrive engine={actions} connected={connected} running={ai} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
+              {robotMode === 'finch' && <ManualDrive stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
               <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}

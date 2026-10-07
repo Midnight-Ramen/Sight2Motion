@@ -1,9 +1,12 @@
+import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
+import type { SensorState } from '../core/Sensors';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
 import { NumericSlider } from './NumericSlider';
 import { makeAction, makeRule, type Action } from '../core/types';
 import type { ActionEngine } from '../core/ActionEngine';
 
+const EMPTY_SENSORS: SensorState = {};
 type Direction = Action['direction'];
 export const driveKeys: Readonly<Record<string, Direction>> = {
   w: 'forward', ArrowUp: 'forward', s: 'backward', ArrowDown: 'backward',
@@ -12,9 +15,20 @@ export const driveKeys: Readonly<Record<string, Direction>> = {
 const editing = (target: EventTarget | null) => target instanceof Element &&
   !!target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
 
-export function ManualDrive({ engine, connected, running, busy, open }: {
+export function ManualDrive({ engine, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+  sensors?: SensorState; stopRevision?: number;
   engine: ActionEngine; connected: boolean; running: boolean; busy: boolean; open: boolean;
 }) {
+  const [recording] = useState(() => new EncoderRecording());
+  const [, refresh] = useState(0);
+  const readings = useRef(sensors); readings.current = sensors;
+  const pair = () => encoderPair(readings.current, performance.now());
+  useEffect(() => {
+    if (!connected) recording.clear();
+    else recording.observe(pair());
+    refresh(value => value + 1);
+  }, [sensors, connected, recording]);
+  useEffect(() => { recording.stop(pair()); }, [stopRevision, recording]);
   const [speed, setSpeed] = useState(30);
   const [direction, setDirection] = useState<Direction | null>(null);
   const held = useRef<string | null>(null);
@@ -22,6 +36,7 @@ export function ManualDrive({ engine, connected, running, busy, open }: {
   current.current = { speed, enabled: connected && !running && !busy && open };
   const stop = () => {
     if (held.current === null) return;
+    recording.stop(pair());
     held.current = null;
     setDirection(null);
     void engine.stop();
@@ -30,6 +45,7 @@ export function ManualDrive({ engine, connected, running, busy, open }: {
     if (!current.current.enabled || held.current !== null || editing(document.activeElement) || document.hidden) return false;
     held.current = token;
     setDirection(next);
+    recording.begin(next, pair());
     // Ephemeral owner only: reuse continuous action ownership, cancellation and watchdog.
     const rule = { ...makeRule(), id: `manual-drive-${crypto.randomUUID()}`, actions: [
       { ...makeAction('move'), mode: 'continuous' as const, direction: next, speed: current.current.speed },
@@ -71,6 +87,11 @@ export function ManualDrive({ engine, connected, running, busy, open }: {
   }, [engine]);
   return <section className="manual-drive" aria-label="Manual Drive">
     <h3>Manual Drive</h3>
+    <div className="home-controls">
+      <button disabled={!connected || running || busy || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>
+      <button disabled={!recording.origin} onClick={() => { recording.clear(); refresh(value => value + 1); }}>Clear Home</button>
+    </div>
+    <small aria-label="Encoder recording">Home: {recording.origin ? 'Set' : 'Not set'} · Δ Left: {format(recording.relative(pair())?.left)} · Δ Right: {format(recording.relative(pair())?.right)} · Segments: {recording.segments.length}</small>
     <label>Speed %<NumericSlider aria-label="Manual drive speed" min={0} max={100} step={1} value={speed}
       onChange={event => setSpeed(Math.max(0, Math.min(100, +event.target.value)))} /></label>
     <div className="manual-drive-pad">
@@ -90,3 +111,5 @@ export function ManualDrive({ engine, connected, running, busy, open }: {
     <small>{running ? 'Stop rules to drive manually.' : !connected ? 'Connect Finch to drive manually.' : 'Arrow Keys / WASD · Hold to move, release to stop.'}</small>
   </section>;
 }
+
+function format(value: number | undefined) { return value === undefined ? 'No data' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}`; }
