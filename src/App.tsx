@@ -1,3 +1,4 @@
+import { ManualDrive } from './components/ManualDrive';
 import { SetupSection } from './components/SetupSection';
 import { cameraFailure, modelGuidance, detectionEmpty } from './core/StudentGuidance';
 import { LiveDiagnostics } from './components/LiveDiagnostics';
@@ -1186,6 +1187,7 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
+              {robotMode === 'finch' && <ManualDrive engine={actions} connected={connected} running={ai} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
               <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}
