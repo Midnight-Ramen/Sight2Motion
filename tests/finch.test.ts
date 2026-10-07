@@ -179,3 +179,13 @@ it('addresses selected Finch tail LEDs individually', async () => {
   expect(s.paths().filter(p => p.includes('/triled/'))).toHaveLength(2);
   await s.adapter.disconnect();
 });
+it('uses independent tail colors with shared fallback and leaves unchecked LEDs unchanged', async () => {
+  const s = setup(); await s.adapter.connect();
+  await s.adapter.executeAction({ ...makeAction('tail'), color: '#00ff00', tailLights: [1, 3],
+    tailColors: { 1: '#ff0000', 2: '#0000ff' } }, new AbortController().signal);
+  expect(s.paths().filter(p => p.includes('/triled/'))).toEqual([
+    'http://127.0.0.1:30061/hummingbird/out/triled/2/255/0/0/A',
+    'http://127.0.0.1:30061/hummingbird/out/triled/4/0/255/0/A',
+  ]);
+  await s.adapter.disconnect();
+});

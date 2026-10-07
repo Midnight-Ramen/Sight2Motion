@@ -56,10 +56,11 @@ export function setupReadiness(project: Project, state: SetupState) {
     needsTarget ? 'Next: Select and track your target.' :
     needsVision && !objects && !state.demo ? (project.visionProvider === 'teachable-machine' ? 'Next: Load a model with classes.' : 'Next: Choose an object for this project.') :
     !robot ? 'Next: Choose a robot.' :
+    !state.connected ? 'Next: Connect your robot.' :
     !rules ? problems[0] ?? 'Next: Add and enable a rule.' :
     state.hardwareBusy ? 'Wait for the robot operation to finish.' :
-    !state.connected ? 'Ready! Connect your robot and press Play.' : 'Ready! Press Play.';
-  return { camera, vision, robot, rules, play, helper, ruleProblems: Object.fromEntries(project.rules.map(rule => [rule.id, ruleProblem(rule)])) };
+    'Ready! Press Play.';
+  return { camera, vision, robot: robot && state.connected, rules, play, helper, ruleProblems: Object.fromEntries(project.rules.map(rule => [rule.id, ruleProblem(rule)])) };
 }
 export function focusSetupSection(id: string) {
   const section = document.getElementById(id);

@@ -234,11 +234,13 @@ export class FinchAdapter implements RobotAdapter {
       }
       case 'tail': {
         if (!/^#[0-9a-f]{6}$/i.test(action.color)) throw new Error('Choose a valid tail color.');
-        const rgb = [1, 3, 5].map((i) => parseInt(action.color.slice(i, i + 2), 16));
         const lights = action.tailLights ?? [1, 2, 3, 4];
         if (lights.some(light => ![1, 2, 3, 4].includes(light))) throw new Error('Choose tail lights 1–4.');
         for (const light of new Set(lights)) {
           if (signal.aborted) break;
+          const color = action.tailColors?.[light as 1 | 2 | 3 | 4] ?? action.color;
+          if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Choose a valid tail color.');
+          const rgb = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
           await this.transport.command(`/hummingbird/out/triled/${light + 1}/${rgb.join('/')}/${this.slot}`, signal);
         }        break;
       }

@@ -283,7 +283,7 @@ export function RuleCard({
                   <NumericSlider aria-label={`Action ${i + 1} angle`} type="number" min={0} max={180} value={a.angle ?? 90}
                     onChange={e => updateAction(a.id, { angle: Math.max(0, Math.min(180, +e.target.value)) })} />
                 </label>}
-                {(a.kind === 'beak' || a.kind === 'tail' || a.kind === 'triLed') && (
+                {(a.kind === 'beak' || a.kind === 'triLed') && (
                   <label className="color-field">
                     Color
                     <input
@@ -297,20 +297,24 @@ export function RuleCard({
                 )}
                 {a.kind === 'tail' && <fieldset className="tail-light-picker">
                   <legend>Tail lights</legend>
-                  {[1, 2, 3, 4].map(light => <label key={light}>
-                    <input type="checkbox" aria-label={`Action ${i + 1} tail light ${light}`}
+                  <div className="tail-led-row">{([1, 2, 3, 4] as const).map(light => <div className="tail-led-control" key={light}>
+                    <label><input type="checkbox" aria-label={`Action ${i + 1} tail light ${light}`}
                       checked={(a.tailLights ?? [1, 2, 3, 4]).includes(light)}
                       onChange={e => updateAction(a.id, { tailLights: e.target.checked
                         ? [...(a.tailLights ?? [1, 2, 3, 4]), light]
-                        : (a.tailLights ?? [1, 2, 3, 4]).filter(n => n !== light) })} />{light}
-                  </label>)}
+                        : (a.tailLights ?? [1, 2, 3, 4]).filter(n => n !== light) })} />{light}</label>
+                    <input type="color" aria-label={`Action ${i + 1} tail light ${light} color`}
+                      disabled={!(a.tailLights ?? [1, 2, 3, 4]).includes(light)}
+                      value={a.tailColors?.[light] ?? a.color}
+                      onChange={e => updateAction(a.id, { tailColors: { ...a.tailColors, [light]: e.target.value } })} />
+                  </div>)}</div>
                   <small>Choose which lights receive this color. Others stay unchanged.</small>
                 </fieldset>}
                 {a.kind === 'tailLightSequence' && <fieldset className="tail-light-picker">
                   <legend>Tail light sequence</legend>
-                  {[1, 2, 3, 4].map(light => {
+                  <div className="tail-led-row">{[1, 2, 3, 4].map(light => {
                     const step = a.steps?.find(s => s.light === light);
-                    return <div key={light} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    return <div key={light} className="tail-led-control">
                       <label><input type="checkbox" aria-label={`Action ${i + 1} sequence light ${light}`} checked={!!step}
                         onChange={e => updateAction(a.id, { steps: e.target.checked
                           ? [...(a.steps ?? []), sequenceDefaults().steps[light - 1]].sort((x, y) => x.light - y.light)
@@ -319,11 +323,12 @@ export function RuleCard({
                         value={step?.color ?? sequenceDefaults().steps[light - 1].color}
                         onChange={e => updateAction(a.id, { steps: a.steps!.map(s => s.light === light ? { ...s, color: e.target.value } : s) })} />
                     </div>;
-                  })}
-                  <label>Step speed (ms)<input type="number" min={50} max={10000} step={50} value={a.stepDurationMs ?? 250}
+                  })}</div>
+                  <div className="tail-timing"><label>Step speed (ms)<input type="number" min={50} max={10000} step={50} value={a.stepDurationMs ?? 250}
                     onChange={e => updateAction(a.id, { stepDurationMs: Math.max(50, Math.min(10000, Math.round(+e.target.value))) })} /></label>
                   <label>Repeat (times)<input type="number" min={1} max={20} value={a.repeatCount ?? 3}
                     onChange={e => updateAction(a.id, { repeatCount: Math.max(1, Math.min(20, Math.round(+e.target.value))) })} /></label>
+                  </div>
                   <label><input type="checkbox" checked={a.clearPrevious ?? true} onChange={e => updateAction(a.id, { clearPrevious: e.target.checked })} />One light at a time</label>
                   <label><input type="checkbox" checked={a.clearWhenFinished ?? true} onChange={e => updateAction(a.id, { clearWhenFinished: e.target.checked })} />Turn sequence lights off when finished</label>
                 </fieldset>}

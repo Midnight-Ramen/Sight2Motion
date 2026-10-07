@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.2 — Classroom Workspace + Finch Sensor Foundations
+
+- Added Finch onboard distance, line, light, encoder, and orientation sensors using verified BlueBird mappings.
+- Added sensor-only and combined Vision + Sensor rules, with sensor-triggered motion safety.
+- Heading remains unavailable as a rule condition because calibration validity cannot be verified.
+- Added a compact MakeCode-inspired workspace, collapsible setup rail, and readiness-based setup progression.
+- Compacted rule editors and paired native sliders with numeric controls.
+- Added independent tail-LED colors with backward-compatible shared-color fallback; unchecked LEDs remain unchanged.
+- Optimized desktop controls for 100% zoom, simplified camera UI, and kept Play / STOP controls persistently accessible.
+- Release verification: 326 tests passed; production build passed; browser checks passed at 1440×900 and 1920×1080.
+- Physical acceptance passed: Finch sensors, rule UI, setup flow, Play/STOP, per-tail-LED colors, and Tail Light Sequence regression, confirmed by Jonathan Delgado.
+- Approved v0.9 behavior frozen; no additional autonomous vehicle features included.
+
 ## v0.8.0 — Tracking & Follow Stability
 
 - Improved target association and retention, including MobileSAM-selected targets and short-loss reacquisition.

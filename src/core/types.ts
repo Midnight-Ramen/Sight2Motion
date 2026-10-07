@@ -40,6 +40,7 @@ export interface Action {
   angle?: number;
   color: string;
   tailLights?: number[];
+  tailColors?: Partial<Record<1 | 2 | 3 | 4, string>>;
   steps?: { light: number; color: string }[];
   stepDurationMs?: number;
   repeatCount?: number;

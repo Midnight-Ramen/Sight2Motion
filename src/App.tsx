@@ -252,7 +252,6 @@ export default function App() {
     cameraError || (cameraOn && !usableFrame ? 'Camera frames are unavailable. Reconnect your camera.' : readiness.helper);
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
-    setNotice('Changes ready. Press Play rules to run your updated actions.');
     setProject(p);
     setDirty(true);
     rules.reset();
@@ -1052,29 +1051,6 @@ export default function App() {
             </div>
           </section>
           <aside>
-            <SetupSection id="robot-panel" title="Your robot" summary={`${ROBOTS[robotMode].name} · ${connected ? 'Connected' : 'Disconnected'}`} icon={<Radio size={18} />} open={setupOpen === 'robot-panel'} onToggle={() => toggleSetup('robot-panel')}>
-              <div className="robot-select">
-                <label htmlFor="robot-type">Robot</label>
-                <select
-                  id="robot-type"
-                  value={robotMode}
-                  disabled={hardwareBusy}
-                  onChange={(e) => void selectRobot(e.target.value as RobotType)}
-                >
-                  {Object.entries(ROBOTS).map(([value, config]) => <option key={value} value={value}>{config.name}</option>)}
-                </select>
-              </div>
-              <HardwareTest
-                robotType={robotMode}
-                status={robotMode === 'finch' ? finchStatus : hummingbirdStatus}
-                busy={hardwareBusy}
-                onAttach={() => void attachRobot()}
-                onDisconnect={() => void detachRobot()}
-                onAction={action => void hardwareAction(action)}
-                onReset={() => void resetProjectOutputs()}
-                onStop={stop}
-              />
-            </SetupSection>
             <SetupSection id="model-panel" title="AI model" summary={`${providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'} · ${modelBusy ? 'Loading' : modelReady ? 'Ready' : 'Not loaded'}`} icon={<Sparkles size={18} />} open={setupOpen === 'model-panel'} onToggle={() => toggleSetup('model-panel')}>
               <div className="model-body">
                 <label>AI model
@@ -1187,6 +1163,29 @@ export default function App() {
                 </div>
                 </details>
               </div>
+            </SetupSection>
+            <SetupSection id="robot-panel" title="Your robot" summary={`${ROBOTS[robotMode].name} · ${connected ? 'Connected' : 'Disconnected'}`} icon={<Radio size={18} />} open={setupOpen === 'robot-panel'} onToggle={() => toggleSetup('robot-panel')}>
+              <div className="robot-select">
+                <label htmlFor="robot-type">Robot</label>
+                <select
+                  id="robot-type"
+                  value={robotMode}
+                  disabled={hardwareBusy}
+                  onChange={(e) => void selectRobot(e.target.value as RobotType)}
+                >
+                  {Object.entries(ROBOTS).map(([value, config]) => <option key={value} value={value}>{config.name}</option>)}
+                </select>
+              </div>
+              <HardwareTest
+                robotType={robotMode}
+                status={robotMode === 'finch' ? finchStatus : hummingbirdStatus}
+                busy={hardwareBusy}
+                onAttach={() => void attachRobot()}
+                onDisconnect={() => void detachRobot()}
+                onAction={action => void hardwareAction(action)}
+                onReset={() => void resetProjectOutputs()}
+                onStop={stop}
+              />
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
               <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}

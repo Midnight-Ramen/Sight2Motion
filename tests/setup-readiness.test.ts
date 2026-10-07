@@ -47,10 +47,10 @@ it('valid enabled rules complete Rules, disabled rules do not', () => {
   p.rules[0].enabled = false;
   expect(setupReadiness(p, ready).rules).toBe(false);
 });
-it('templates use normal derived readiness without requiring robot attachment for configuration', () => {
+it('templates require robot attachment for the connection checkmark', () => {
   const p = PROJECT_TEMPLATES[0].createProject();
-  expect(setupReadiness(p, { ...ready, usableFrame: false, connected: false })).toMatchObject({ camera: false, vision: true, robot: true, rules: true, play: false });
-  expect(setupReadiness(p, { ...ready, connected: false }).helper).toBe('Ready! Connect your robot and press Play.');
+  expect(setupReadiness(p, { ...ready, usableFrame: false, connected: false })).toMatchObject({ camera: false, vision: true, robot: false, rules: true, play: false });
+  expect(setupReadiness(p, { ...ready, connected: false }).helper).toBe('Next: Connect your robot.');
 });
 it('all requirements enable Play and running has clear guidance', () => {
   expect(setupReadiness(makeProject(), ready)).toMatchObject({ play: true, helper: 'Ready! Press Play.' });
@@ -60,4 +60,11 @@ it('a saved custom target name requires an actively tracked selection', () => {
   const p = makeProject(); p.customObjects = ['My cup']; p.rules[0].className = 'My cup';
   expect(setupReadiness(p, ready)).toMatchObject({ vision: false, rules: false, helper: 'Next: Select and track your target.' });
   expect(setupReadiness(p, { ...ready, trackedName: 'My cup' }).rules).toBe(true);
+});
+it('guides camera, model, robot, rules and Play in order', () => {
+ const p=makeProject(); p.rules=[];
+ expect(setupReadiness(p,{...ready,usableFrame:false,modelReady:false,connected:false}).helper).toContain('Start your camera');
+ expect(setupReadiness(p,{...ready,modelReady:false,connected:false}).helper).toContain('Load your AI');
+ expect(setupReadiness(p,{...ready,connected:false})).toMatchObject({robot:false,helper:'Next: Connect your robot.'});
+ expect(setupReadiness(p,ready).helper).toContain('Add and enable a rule');
 });

@@ -94,6 +94,7 @@ export function parseProject(text: string): Project {
           (a.lostTargetTimeoutMs !== undefined && !number(a.lostTargetTimeoutMs, 100, 3000)))) ||
         (a.kind === 'tailLightSequence' && !validTailSequence(a as Partial<Action>)) ||
         (a.tailLights !== undefined && (!Array.isArray(a.tailLights) || a.tailLights.length > 4 || a.tailLights.some(v => ![1, 2, 3, 4].includes(v as number)))) ||
+        (a.tailColors !== undefined && (!obj(a.tailColors) || Object.entries(a.tailColors).some(([light, color]) => !['1', '2', '3', '4'].includes(light) || typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)))) ||
         typeof a.color !== 'string' ||
         !/^#[0-9a-f]{6}$/i.test(a.color) ||
         !number(a.duration, 0, 10000) ||
@@ -167,6 +168,7 @@ export function parseProject(text: string): Project {
         ...(a.kind === 'singleLed' ? { brightness: a.brightness } : {}),
         ...(a.kind === 'positionServo' ? { angle: a.angle } : {}),
         color: a.color,
+        ...(a.kind === 'tail' && a.tailColors !== undefined ? { tailColors: { ...a.tailColors } } : {}),
         ...(a.tailLights !== undefined ? { tailLights: [...new Set(a.tailLights)] } : {}),
         ...(a.kind === 'tailLightSequence' ? {
           steps: a.steps!.map(s => ({ light: s.light, color: s.color })),
