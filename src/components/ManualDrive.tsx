@@ -1,3 +1,5 @@
+import { NavigationControls } from './NavigationControls';
+import type { RobotAdapter } from '../core/RobotAdapter';
 import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
 import type { SensorState } from '../core/Sensors';
 import { useEffect, useRef, useState } from 'react';
@@ -15,10 +17,12 @@ export const driveKeys: Readonly<Record<string, Direction>> = {
 const editing = (target: EventTarget | null) => target instanceof Element &&
   !!target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
 
-export function ManualDrive({ engine, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+export function ManualDrive({ engine, robot, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+  robot?: RobotAdapter;
   sensors?: SensorState; stopRevision?: number;
   engine: ActionEngine; connected: boolean; running: boolean; busy: boolean; open: boolean;
 }) {
+  const cancelNavigation = useRef<(() => void) | null>(null);
   const [recording] = useState(() => new EncoderRecording());
   const [, refresh] = useState(0);
   const readings = useRef(sensors); readings.current = sensors;
@@ -43,6 +47,7 @@ export function ManualDrive({ engine, connected, running, busy, open, stopRevisi
   };
   const start = (next: Direction, token: string) => {
     if (!current.current.enabled || held.current !== null || editing(document.activeElement) || document.hidden) return false;
+    cancelNavigation.current?.();
     held.current = token;
     setDirection(next);
     recording.begin(next, pair());
@@ -94,6 +99,7 @@ export function ManualDrive({ engine, connected, running, busy, open, stopRevisi
     <small aria-label="Encoder recording">Home: {recording.origin ? 'Set' : 'Not set'} · Δ Left: {format(recording.relative(pair())?.left)} · Δ Right: {format(recording.relative(pair())?.right)} · Segments: {recording.segments.length}</small>
     <label>Speed %<NumericSlider aria-label="Manual drive speed" min={0} max={100} step={1} value={speed}
       onChange={event => setSpeed(Math.max(0, Math.min(100, +event.target.value)))} /></label>
+    {robot && <NavigationControls engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
     <div className="manual-drive-pad">
       {([['forward', ArrowUp], ['left', ArrowLeft], ['backward', ArrowDown], ['right', ArrowRight]] as const).map(([value, Icon]) =>
         <button key={value} className={`drive-${value}`} aria-label={`Drive ${value}`} aria-pressed={direction === value}

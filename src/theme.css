@@ -473,3 +473,9 @@ label.mirror-control input { margin: 0; width: auto; }
 .manual-drive small { display: block; color: var(--muted); font-size: 11px; }
 .home-controls { display: flex; gap: 8px; margin-bottom: 6px; }
 .manual-drive [aria-label="Encoder recording"] { margin-bottom: 8px; }
+.navigation-controls { margin-top: 8px; }
+.navigation-controls > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.navigation-controls label { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.navigation-controls input { width: 54px; min-width: 0; padding: 4px; }
+.navigation-controls button { padding: 5px 8px; font-size: 12px; }
+.navigation-controls [role=status] { min-height: 1.4em; }
