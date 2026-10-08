@@ -7,6 +7,8 @@ import { SENSOR_MAX_AGE, sensorMatches, type SensorState, type SensorCondition }
 
 export const NAVIGATION = { tickMs: 100, timeoutMs: 30000, stallMs: 1500, progressRotations: .01,
  toleranceRotations: .02, slowdownRotations: .5, minimumSpeed: 10, turnSlowdownRotations: .9, turnMinimumSpeed: 5, turnSlowdownExponent: 1.3, driftGain: 20, straightDriftGain: 30, maxCorrection: 5, homeToleranceRotations: .02 } as const;
+export const KEEP_DISTANCE = { hysteresisCm: .5, speedPerCm: 2, minimumSpeed: 5 } as const;
+type KeepDistanceState={target:number;tolerance:number;direction:number|null;motionSince:number};
 export type NavigationCommand = { kind: 'distance'; direction: 'forward' | 'backward'; amount: number } |
  { kind: 'turn'; direction: 'left' | 'right'; amount: number };
 export type DriveUntilCondition={operator:Exclude<SensorCondition['operator'],'equals'>;value:number};
@@ -38,7 +40,7 @@ type ReturnRoute={commands:NavigationCommand[];index:number;recording:EncoderRec
 /** Consumes existing sensor state; never polls sensors or implements transport. */
 export class FinchNavigation {
  private job?: { owner: string; abort: AbortController; start: {left:number;right:number}; target:number;
-  signs:[number,number]; straight:boolean; speed:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety };
+  signs:[number,number]; straight:boolean; speed:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety; keep?:KeepDistanceState };
  private timer?: ReturnType<typeof setInterval>;
  private sending = false;
  private lastCommand?: string;
@@ -66,8 +68,17 @@ export class FinchNavigation {
   if(!start||freshDistance(this.sensors(),this.now())===null)return false;
   return this.begin(start,Infinity,[1,1],true,speed,'Driving until distance condition…',undefined,{until:{...condition},emergencyDistance});
  }
+ async keepDistance(target:number,tolerance:number,speed:number) {
+  if(this.active||!this.allowed()||!this.robot.connected||!this.robot.setWheelSpeeds||
+   !Number.isFinite(target)||target<=0||!Number.isFinite(tolerance)||tolerance<0||tolerance>=target||
+   !Number.isFinite(speed)||speed<=0||speed>100)return false;
+  const start=encoderPair(this.sensors(),this.now());
+  if(!start||freshDistance(this.sensors(),this.now())===null)return false;
+  return this.begin(start,Infinity,[1,1],true,speed,'Keep Distance active',undefined,undefined,
+   {target,tolerance,direction:null,motionSince:this.now()});
+ }
  // Sensor updates can stop forward navigation immediately without another polling loop.
- sensorsUpdated() { if(this.job?.safety)void this.tick(); }
+ sensorsUpdated() { if(this.job?.safety||this.job?.keep)void this.tick(); }
  async returnToBase(recording: EncoderRecording, speed: number) {
   if(this.active || !this.allowed() || !this.robot.connected || !this.robot.setWheelSpeeds ||
    !Number.isFinite(speed) || speed<=0 || speed>100 || !recording.origin || !recording.segments.length) return false;
@@ -82,10 +93,10 @@ export class FinchNavigation {
    `Returning to Base · 1/${commands.length}`,route);
  }
  private async begin(start:{left:number;right:number},target:number,signs:[number,number],straight:boolean,speed:number,
-  message:string,route?:ReturnRoute,safety?:ForwardSafety) {
+  message:string,route?:ReturnRoute,safety?:ForwardSafety,keep?:KeepDistanceState) {
   const began=this.now();
   const job: NonNullable<FinchNavigation['job']> = { owner: `navigation-${crypto.randomUUID()}`, abort: new AbortController(), start,target,signs,straight,speed,
-   began,progress:[0,0],advanced:[began,began],ready:false,route,safety };
+   began,progress:[0,0],advanced:[began,began],ready:false,route,safety,keep };
   this.job=job;this.lastCommand=undefined;this.status(message);
   this.timer = setInterval(() => { void this.tick(); }, NAVIGATION.tickMs);
   // Claim the same wheel owner as Manual Drive using a zero-speed continuous action.
@@ -122,9 +133,10 @@ export class FinchNavigation {
     this.cancel('Drive Until complete');return;
    }
   }
-  if (now-j.began>=NAVIGATION.timeoutMs) { this.cancel('Navigation stopped: timeout'); return; }
+  if (!j.keep && now-j.began>=NAVIGATION.timeoutMs) { this.cancel('Navigation stopped: timeout'); return; }
   if (!j.ready || j.advancing) return;
   if (this.engine.activeMotorOwnerRuleId!==j.owner) { this.cancel('Navigation stopped: wheel ownership changed'); return; }
+  if(j.keep){await this.tickKeep(j,pair,now);return;}
   const progress=[(pair.left-j.start.left)*j.signs[0],(pair.right-j.start.right)*j.signs[1]];
   const done=progress.map(p=>p>=j.target-NAVIGATION.toleranceRotations);
   if (done.every(Boolean)) {
@@ -161,6 +173,35 @@ export class FinchNavigation {
    : Math.min(j.speed,Math.max(Math.min(j.speed,NAVIGATION.turnMinimumSpeed),j.speed*Math.pow(Math.min(1,remaining/NAVIGATION.turnSlowdownRotations),NAVIGATION.turnSlowdownExponent)));
   const correction=Math.max(-NAVIGATION.maxCorrection,Math.min(NAVIGATION.maxCorrection,(progress[0]-progress[1])*(j.straight ? NAVIGATION.straightDriftGain : NAVIGATION.driftGain)));
   const output=[base-correction,base+correction].map((v,i)=>done[i]?0:Math.round(Math.max(0,Math.min(j.speed,v)))*j.signs[i]);
+  await this.sendWheels(j,output);
+ }
+ private async tickKeep(j:NonNullable<FinchNavigation['job']>,pair:{left:number;right:number},now:number) {
+  const keep=j.keep!,distance=freshDistance(this.sensors(),now);
+  if(distance===null){this.cancel('Keep Distance stopped: distance data unavailable');return;}
+  const error=distance-keep.target,sign=Math.sign(error);
+  let direction=keep.direction;
+  if(Math.abs(error)<=keep.tolerance)direction=0;
+  else if(direction===null)direction=sign;
+  else if(direction===0){if(Math.abs(error)>keep.tolerance+KEEP_DISTANCE.hysteresisCm)direction=sign;}
+  else if(direction!==sign)direction=0; // Stop before changing direction.
+  if(direction!==keep.direction||direction===0){
+   j.start=pair;j.progress=[0,0];j.advanced=[now,now];keep.motionSince=now;
+  }
+  keep.direction=direction;
+  if(direction!==0){
+   if(now-keep.motionSince>=NAVIGATION.timeoutMs){this.cancel('Keep Distance stopped: timeout');return;}
+   const progress=[(pair.left-j.start.left)*direction!,(pair.right-j.start.right)*direction!];
+   for(let i=0;i<2;i++){
+    if(progress[i]-j.progress[i]>=NAVIGATION.progressRotations){j.progress[i]=progress[i];j.advanced[i]=now;}
+    if(now-j.advanced[i]>=NAVIGATION.stallMs){this.cancel('Keep Distance stopped: encoder progress stalled');return;}
+   }
+  }
+  const magnitude=Math.min(j.speed,Math.max(KEEP_DISTANCE.minimumSpeed,
+   (Math.abs(error)-keep.tolerance)*KEEP_DISTANCE.speedPerCm));
+  const wheel=direction===0?0:Math.round(magnitude)*direction!;
+  await this.sendWheels(j,[wheel,wheel]);
+ }
+ private async sendWheels(j:NonNullable<FinchNavigation['job']>,output:number[]) {
   const key=output.join(','); if(this.sending||key===this.lastCommand)return;
   this.sending=true;
   try {

@@ -262,3 +262,49 @@ it('optional braking does not affect backward movement, turns, or unmonitored di
   s.nav.cancel();
  }
 });
+
+it.each([[50,30],[5,-30],[25,0],[22,0],[28,0]])('Keep Distance reading %s commands %s while retaining ownership',async(distance,wheel)=>{
+ const s=await setup();s.distance(distance);
+ expect(await s.nav.keepDistance(25,3,30)).toBe(true);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([wheel,wheel]);
+ expect(s.nav.active).toBe(true);expect(s.engine.activeMotorOwnerRuleId).not.toBeNull();s.nav.cancel();
+});
+it('Keep Distance slows proportionally and hysteresis suppresses boundary chatter',async()=>{
+ const s=await setup();s.distance(45);await s.nav.keepDistance(25,3,30);
+ for(const [distance,wheel] of [[33,10],[29,5],[28,0],[28.4,0],[28.6,5],[25,0],[21.6,0],[21,-5]]){
+  s.distance(distance);s.nav.sensorsUpdated();await Promise.resolve();
+  expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([wheel,wheel]);
+ }
+ s.nav.cancel();
+});
+it('Keep Distance stops before reversing on a large distance jump',async()=>{
+ const s=await setup();s.distance(45);await s.nav.keepDistance(25,3,30);
+ s.distance(5);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);
+ s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([-30,-30]);s.nav.cancel();
+});
+it('Keep Distance rejects stale data and concurrent autonomous commands',async()=>{
+ const s=await setup();s.distance(null);expect(await s.nav.keepDistance(25,3,30)).toBe(false);
+ s.distance(25);await s.nav.keepDistance(25,3,30);
+ expect(await s.nav.start({kind:'distance',direction:'forward',amount:30},30)).toBe(false);
+ expect(await s.nav.driveUntil({operator:'lessThan',value:20},30)).toBe(false);
+ expect(await s.nav.keepDistance(25,3,30)).toBe(false);s.nav.cancel();
+});
+it.each(['stale distance','stale encoder','cancel','disconnect','disabled','stall','timeout'])('Keep Distance stops on %s',async reason=>{
+ const s=await setup();await s.nav.keepDistance(25,3,30);const stop=vi.spyOn(s.robot,'stop');
+ if(reason==='cancel')s.nav.cancel();
+ if(reason==='disconnect')s.robot.connected=false;
+ if(reason==='disabled')s.disable();
+ if(reason==='stale distance'){s.distance(null);s.nav.sensorsUpdated();}
+ await s.advance(reason==='timeout'?NAVIGATION.timeoutMs:reason==='stall'?NAVIGATION.stallMs:800,
+  ...(reason==='stale encoder'?[]:[0,0]) as [number?,number?]);
+ expect(stop).toHaveBeenCalled();expect(s.nav.active).toBe(false);expect(s.engine.activeMotorOwnerRuleId).toBeNull();
+});
+it('Keep Distance holds within tolerance without a false stall or movement timeout',async()=>{
+ const s=await setup();s.distance(25);await s.nav.keepDistance(25,3,30);
+ // Advance clock with fresh encoders and distance held in the stop band.
+ for(let i=0;i<80;i++){s.sample();s.distance(25);await s.advance(500);}
+ expect(s.nav.active).toBe(true);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);s.nav.cancel();
+});

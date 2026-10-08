@@ -15,6 +15,7 @@ export function NavigationControls({ engine, robot, sensors, enabled, speed, sto
  const [untilOperator,setUntilOperator]=useState<DriveUntilCondition['operator']>('lessThan');
  const [untilValue,setUntilValue]=useState(20),[untilSpeed,setUntilSpeed]=useState(30);
  const [emergencyEnabled,setEmergencyEnabled]=useState(false),[emergencyDistance,setEmergencyDistance]=useState(10);
+ const [keepTarget,setKeepTarget]=useState(25),[keepTolerance,setKeepTolerance]=useState(3),[keepSpeed,setKeepSpeed]=useState(30);
  const latest=useRef({sensors,enabled});latest.current={sensors,enabled};
  const [controller]=useState(()=>new FinchNavigation(engine,robot,()=>latest.current.sensors,()=>latest.current.enabled&&!document.hidden,setStatus));
  useEffect(()=>{onActiveChange(controller.active);},[status,controller,onActiveChange]);
@@ -45,6 +46,14 @@ export function NavigationControls({ engine, robot, sensors, enabled, speed, sto
    <label>Speed %<NumericSlider aria-label="Drive Until speed" min={1} max={100} step={1} value={untilSpeed} onChange={e=>setUntilSpeed(+e.target.value)} /></label>
    <button disabled={!enabled||controller.active||!encoderPair(sensors,performance.now())||!distanceFresh||emergencyInvalid||!Number.isFinite(untilValue)||untilValue<0||untilSpeed<=0||untilSpeed>100}
     onClick={()=>void controller.driveUntil({operator:untilOperator,value:untilValue},untilSpeed,emergency)}>Start Drive Until</button>
+  </div>
+  <div><strong>Keep Distance</strong>
+   <label>Target <input aria-label="Keep Distance target cm" type="number" min={1} value={keepTarget} onChange={e=>setKeepTarget(+e.target.value)} /> cm</label>
+   <label>Tolerance ±<input aria-label="Keep Distance tolerance cm" type="number" min={0} step={.5} value={keepTolerance} onChange={e=>setKeepTolerance(+e.target.value)} /> cm</label>
+   <label>Speed %<NumericSlider aria-label="Keep Distance speed" min={1} max={100} step={1} value={keepSpeed} onChange={e=>setKeepSpeed(+e.target.value)} /></label>
+   <button disabled={!enabled||controller.active||!encoderPair(sensors,performance.now())||!distanceFresh||
+    !Number.isFinite(keepTarget)||keepTarget<=0||!Number.isFinite(keepTolerance)||keepTolerance<0||keepTolerance>=keepTarget||!Number.isFinite(keepSpeed)||keepSpeed<=0||keepSpeed>100}
+    onClick={()=>void controller.keepDistance(keepTarget,keepTolerance,keepSpeed)}>Start Keep Distance</button>
   </div>
   {!distanceFresh&&<small>Fresh distance sensor data is required for Drive Until and emergency braking.</small>}
   <div><label>Turn <input aria-label="Turn angle degrees" type="number" min={1} max={360} value={angle} onChange={e=>setAngle(+e.target.value)} /> °</label>
