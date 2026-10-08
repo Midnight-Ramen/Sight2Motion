@@ -342,7 +342,7 @@ export default function App() {
     setSensorState({});
     if (!connected) return;
     const inputs = [...(project.sensorConfiguration ?? [])];
-    if (robotMode === 'finch') for (const type of ['finchEncoderLeft', 'finchEncoderRight', 'finchDistance'] as const) {
+    if (robotMode === 'finch') for (const type of ['finchEncoderLeft', 'finchEncoderRight', 'finchDistance', 'finchLineLeft', 'finchLineRight'] as const) {
       if (!inputs.some(sensor => sensor.id === type)) inputs.push(finchSensorDescriptor(type));
     }
     if (!inputs.length) return;
@@ -1194,7 +1194,7 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'finch' && <ManualDrive robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
+              {robotMode === 'finch' && <ManualDrive lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
               <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}

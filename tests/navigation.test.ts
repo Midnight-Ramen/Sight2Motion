@@ -10,9 +10,10 @@ async function setup(){
  const robot=new MockRobotAdapter();await robot.connect();const wheel=vi.fn(async(_left:number,_right:number,_duration:number,_signal:AbortSignal,_mode?:string)=>{});
  const adapter=Object.assign(robot,{setWheelSpeeds:wheel,connected:true});const engine=new ActionEngine(adapter), status=vi.fn();
  const nav=new FinchNavigation(engine,adapter,()=>state,()=>enabled,status,()=>now);
- const sample=(left=0,right=0)=>{state={finchDistance:{reading:{kind:'number',value:100},updatedAt:now},finchEncoderLeft:{reading:{kind:'number',value:left},updatedAt:now},finchEncoderRight:{reading:{kind:'number',value:right},updatedAt:now}};};
+ const sample=(left=0,right=0)=>{state={...state,finchDistance:{reading:{kind:'number',value:100},updatedAt:now},finchEncoderLeft:{reading:{kind:'number',value:left},updatedAt:now},finchEncoderRight:{reading:{kind:'number',value:right},updatedAt:now}};};
  const distance=(value:number|null,age=0)=>{state.finchDistance={reading:value===null?null:{kind:'number',value},updatedAt:now-age};};
- sample();return {distance,nav,engine,robot:adapter,wheel,status,sample,disable:()=>{enabled=false;},advance:async(ms:number,left?:number,right?:number)=>{now+=ms;if(left!==undefined)sample(left,right);await vi.advanceTimersByTimeAsync(ms);}};
+ const lines=(left:number,right:number,stamp=now)=>{state.finchLineLeft={reading:{kind:'number',value:left},updatedAt:stamp};state.finchLineRight={reading:{kind:'number',value:right},updatedAt:stamp};};
+ sample();return {lines,distance,nav,engine,robot:adapter,wheel,status,sample,disable:()=>{enabled=false;},advance:async(ms:number,left?:number,right?:number)=>{now+=ms;if(left!==undefined)sample(left,right);await vi.advanceTimersByTimeAsync(ms);}};
 }
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
 it('uses supplied geometry and a turn-only calibration multiplier',()=>{
@@ -307,4 +308,92 @@ it('Keep Distance holds within tolerance without a false stall or movement timeo
  for(let i=0;i<80;i++){s.sample();s.distance(25);await s.advance(500);}
  expect(s.nav.active).toBe(true);
  expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);s.nav.cancel();
+});
+
+it.each([[99,99,0],[98,98,0],[14,99,-1],[99,16,1]])('Line Follow %s/%s steers correctly',async(left,right,comparison)=>{
+ const s=await setup();s.lines(left,right);await s.nav.lineFollow(30,50);
+ const [l,r]=s.wheel.mock.calls.at(-1)!;
+ expect(Math.sign(l-r)).toBe(comparison);expect(Math.max(l,r)).toBe(comparison===0?30:27);s.nav.cancel();
+});
+it('Line Follow proportional steering is smoothed once per sensor sample',async()=>{
+ const s=await setup();s.lines(20,80);await s.nav.lineFollow(30,50);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([3,27]);
+ const count=s.wheel.mock.calls.length;s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.length).toBe(count);
+ await s.advance(100,0,0);s.lines(20,80);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)![0]).toBeGreaterThanOrEqual(0);s.nav.cancel();
+});
+it('Line Follow retains black/white states throughout 40–70 and centers on white',async()=>{
+ const s=await setup();s.lines(14,99);await s.nav.lineFollow(30,50);
+ for(const left of [40,55,70]){
+  await s.advance(100,0,0);s.lines(left,99);s.nav.sensorsUpdated();await Promise.resolve();
+  expect(s.wheel.mock.calls.at(-1)![0]).toBeLessThan(s.wheel.mock.calls.at(-1)![1]);
+ }
+ await s.advance(100,0,0);s.lines(71,99);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)![0]).toBeGreaterThan(-12);
+ s.lines(98,98);await s.advance(300,0,0);
+ expect(s.nav.active).toBe(true);expect(s.status).toHaveBeenLastCalledWith('Line Follow active');
+});
+it('both black immediately stops and releases ownership',async()=>{
+ const s=await setup();s.lines(98,98);await s.nav.lineFollow(30,50);
+ expect(await s.nav.lineFollow(30,50)).toBe(false);
+ s.lines(14,16);s.nav.sensorsUpdated();
+ expect(s.nav.active).toBe(false);expect(s.engine.activeMotorOwnerRuleId).toBeNull();
+ expect(s.status).toHaveBeenLastCalledWith('Line Follow stopped: both sensors on black');
+});
+it('physical side determines steering even immediately after crossing sides',async()=>{
+ const s=await setup();s.lines(14,99);await s.nav.lineFollow(30,50);
+ await s.advance(100,0,0);s.lines(99,16);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)![0]).toBeGreaterThan(s.wheel.mock.calls.at(-1)![1]);s.nav.cancel();
+});
+it.each(['stale','disconnect','cancel','disabled'])('Line Follow aborts on %s',async reason=>{
+ const s=await setup();expect(await s.nav.lineFollow(30,50)).toBe(false);
+ s.lines(98,98);await s.nav.lineFollow(30,50);const stop=vi.spyOn(s.robot,'stop');
+ if(reason==='disconnect')s.robot.connected=false;
+ if(reason==='cancel')s.nav.cancel();
+ if(reason==='disabled')s.disable();
+ await s.advance(800,0,0);
+ expect(stop).toHaveBeenCalled();expect(s.nav.active).toBe(false);
+});
+
+it('physical black readings immediately pivot toward the line and resume smoothly',async()=>{
+ const s=await setup();s.lines(98,98);await s.nav.lineFollow(30,50);
+ s.lines(14,99);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([3,27]);
+ s.lines(98,98);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([5,15]);
+ s.lines(99,16);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([27,3]);s.nav.cancel();
+});
+it('Line Follow uses fresh line readings without depending on stale encoders',async()=>{
+ const s=await setup();await s.advance(800);s.lines(98,98);
+ expect(await s.nav.lineFollow(30,50)).toBe(true);
+ await s.advance(100);expect(s.nav.active).toBe(true);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([30,30]);s.nav.cancel();
+});
+
+it.each([[14,99,'REACQUIRE LEFT'],[99,16,'REACQUIRE RIGHT']] as const)('briefly corrects after %s/%s then drives forward without false line loss',async(left,right,label)=>{
+ const s=await setup();s.lines(left,right);await s.nav.lineFollow(30,50);
+ s.lines(99,99);await s.advance(100);
+ expect(s.status).toHaveBeenLastCalledWith(label);
+ const [l,r]=s.wheel.mock.calls.at(-1)!;expect(l).toBeGreaterThanOrEqual(0);expect(r).toBeGreaterThanOrEqual(0);
+ expect(Math.sign(l-r)).toBe(left<40?-1:1);
+ for(let i=0;i<400;i++){s.lines(99,99);await s.advance(100);}
+ expect(s.nav.active).toBe(true);expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([30,30]);
+ expect(s.status).not.toHaveBeenCalledWith('LINE LOST');s.nav.cancel();
+});
+it('S-curve reacquires opposite side immediately and renews memory only on new black data',async()=>{
+ const s=await setup();s.lines(14,99);await s.nav.lineFollow(30,50);
+ s.lines(99,99);await s.advance(100);s.lines(99,16);s.nav.sensorsUpdated();await Promise.resolve();
+ expect(s.status).toHaveBeenLastCalledWith('CORRECT RIGHT');
+ expect(s.wheel.mock.calls.at(-1)![0]).toBeGreaterThan(s.wheel.mock.calls.at(-1)![1]);
+ s.lines(99,99);await s.advance(200);expect(s.nav.active).toBe(true);
+ await s.advance(100);expect(s.status).toHaveBeenLastCalledWith('Line Follow active');s.nav.cancel();
+});
+it('initial both-white remains forward and reacquisition still honors immediate STOP',async()=>{
+ const s=await setup();s.lines(98,98);await s.nav.lineFollow(30,50);
+ for(let i=0;i<400;i++){s.lines(99,99);await s.advance(100);}
+ expect(s.nav.active).toBe(true);s.lines(14,99);s.nav.sensorsUpdated();await Promise.resolve();
+ s.lines(99,99);await s.advance(100);s.nav.cancel();expect(s.nav.active).toBe(false);
+ expect(s.engine.activeMotorOwnerRuleId).toBeNull();
 });

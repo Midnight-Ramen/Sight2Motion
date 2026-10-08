@@ -1,3 +1,4 @@
+import type { SensorProvider } from '../core/SensorProvider';
 import { NavigationControls } from './NavigationControls';
 import type { RobotAdapter } from '../core/RobotAdapter';
 import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
@@ -17,8 +18,8 @@ export const driveKeys: Readonly<Record<string, Direction>> = {
 const editing = (target: EventTarget | null) => target instanceof Element &&
   !!target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
 
-export function ManualDrive({ engine, robot, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
-  robot?: RobotAdapter;
+export function ManualDrive({ engine, robot, lineSensorProvider, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+  robot?: RobotAdapter; lineSensorProvider?: SensorProvider;
   sensors?: SensorState; stopRevision?: number;
   engine: ActionEngine; connected: boolean; running: boolean; busy: boolean; open: boolean;
 }) {
@@ -93,14 +94,9 @@ export function ManualDrive({ engine, robot, connected, running, busy, open, sto
   }, [engine]);
   return <section className="manual-drive" aria-label="Manual Drive">
     <h3>Manual Drive</h3>
-    <div className="home-controls">
-      <button disabled={!connected || running || busy || navigationActive || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>
-      <button disabled={!recording.origin || navigationActive} onClick={() => { recording.clear(); refresh(value => value + 1); }}>Clear Home</button>
-    </div>
-    <small aria-label="Encoder recording">Home: {recording.origin ? 'Set' : 'Not set'} · Δ Left: {format(recording.relative(pair())?.left)} · Δ Right: {format(recording.relative(pair())?.right)} · Segments: {recording.segments.length}</small>
     <label>Speed %<NumericSlider aria-label="Manual drive speed" min={0} max={100} step={1} value={speed}
       onChange={event => setSpeed(Math.max(0, Math.min(100, +event.target.value)))} /></label>
-    {robot && <NavigationControls recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
+
     <div className="manual-drive-pad">
       {([['forward', ArrowUp], ['left', ArrowLeft], ['backward', ArrowDown], ['right', ArrowRight]] as const).map(([value, Icon]) =>
         <button key={value} className={`drive-${value}`} aria-label={`Drive ${value}`} aria-pressed={direction === value}
@@ -116,6 +112,14 @@ export function ManualDrive({ engine, robot, connected, running, busy, open, sto
         </button>)}
     </div>
     <small>{running ? 'Stop rules to drive manually.' : !connected ? 'Connect Finch to drive manually.' : 'Arrow Keys / WASD · Hold to move, release to stop.'}</small>
+    {robot && <NavigationControls lineSensorProvider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
+    <details className="home-recording"><summary>Home &amp; path recording</summary>
+    <div className="home-controls">
+      <button disabled={!connected || running || busy || navigationActive || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>
+      <button disabled={!recording.origin || navigationActive} onClick={() => { recording.clear(); refresh(value => value + 1); }}>Clear Home</button>
+    </div>
+    <small aria-label="Encoder recording">Home: {recording.origin ? 'Set' : 'Not set'} · Δ Left: {format(recording.relative(pair())?.left)} · Δ Right: {format(recording.relative(pair())?.right)} · Segments: {recording.segments.length}</small>
+    </details>
   </section>;
 }
 

@@ -15,6 +15,7 @@ try{
  const forward=p.getByRole('button',{name:'Forward',exact:true});await expect(forward).toBeEnabled();
  await expect(p.getByText('Turn calibration required',{exact:true})).toHaveCount(0);await expect(p.getByRole('button',{name:'Turn Left',exact:true})).toBeEnabled();
 
+ await p.getByText('Home & path recording',{exact:true}).click();
  await p.getByRole('button',{name:'Set Home',exact:true}).click();
  await p.getByLabel('Turn angle degrees').fill('180');
  await p.getByRole('button',{name:'Turn Left',exact:true}).click();

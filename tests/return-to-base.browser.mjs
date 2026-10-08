@@ -7,6 +7,7 @@ try{
  await p.goto('http://127.0.0.1:5174');
  await p.getByRole('button',{name:'Your robot',exact:true}).click();
  await p.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
+ await p.getByText('Home & path recording',{exact:true}).click();
  const home=p.getByRole('button',{name:'Set Home',exact:true});
  const back=p.getByRole('button',{name:'Return to Base',exact:true});
  await expect(back).toBeDisabled();

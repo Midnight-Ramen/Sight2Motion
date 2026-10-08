@@ -10,6 +10,7 @@ try{
  await p.goto('http://127.0.0.1:5174');
  await p.getByRole('button',{name:'Your robot',exact:true}).click();
  await p.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
+ await p.getByRole('button',{name:'+ Add behavior',exact:true}).click();await p.getByLabel('Add behavior',{exact:true}).selectOption('Drive Until');
  const start=p.getByRole('button',{name:'Start Drive Until',exact:true});
  await expect(start).toBeEnabled();
  await p.getByRole('spinbutton',{name:'Drive Until speed',exact:true}).fill('25');

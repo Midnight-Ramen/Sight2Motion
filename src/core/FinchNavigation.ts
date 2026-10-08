@@ -9,6 +9,13 @@ export const NAVIGATION = { tickMs: 100, timeoutMs: 30000, stallMs: 1500, progre
  toleranceRotations: .02, slowdownRotations: .5, minimumSpeed: 10, turnSlowdownRotations: .9, turnMinimumSpeed: 5, turnSlowdownExponent: 1.3, driftGain: 20, straightDriftGain: 30, maxCorrection: 5, homeToleranceRotations: .02 } as const;
 export const KEEP_DISTANCE = { hysteresisCm: .5, speedPerCm: 2, minimumSpeed: 5 } as const;
 type KeepDistanceState={target:number;tolerance:number;direction:number|null;motionSince:number};
+export const LINE_FOLLOW={blackBelow:40,whiteAbove:70,alpha:.3,deadband:.04,resumeStep:5,minimumAuthority:.9,correctionSpeed:.9,reacquireMs:150,reacquireSpeed:.5,reacquireInner:.3} as const;
+type LineState={sensitivity:number;error:number;on:[boolean,boolean];stamp:string;side:number;lastBlackAt:number|null;output:[number,number]};
+export function freshLines(state:SensorState,now:number):[number,number]|null {
+ const samples=[state.finchLineLeft,state.finchLineRight];
+ if(samples.some(s=>!s||s.reading?.kind!=='number'||!Number.isFinite(s.reading.value)||s.reading.value<0||s.reading.value>100||now<s.updatedAt||now-s.updatedAt>SENSOR_MAX_AGE))return null;
+ return samples.map(s=>s.reading!.value) as [number,number];
+}
 export type NavigationCommand = { kind: 'distance'; direction: 'forward' | 'backward'; amount: number } |
  { kind: 'turn'; direction: 'left' | 'right'; amount: number };
 export type DriveUntilCondition={operator:Exclude<SensorCondition['operator'],'equals'>;value:number};
@@ -40,10 +47,11 @@ type ReturnRoute={commands:NavigationCommand[];index:number;recording:EncoderRec
 /** Consumes existing sensor state; never polls sensors or implements transport. */
 export class FinchNavigation {
  private job?: { owner: string; abort: AbortController; start: {left:number;right:number}; target:number;
-  signs:[number,number]; straight:boolean; speed:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety; keep?:KeepDistanceState };
+  signs:[number,number]; straight:boolean; speed:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety; keep?:KeepDistanceState; line?:LineState };
  private timer?: ReturnType<typeof setInterval>;
  private sending = false;
  private lastCommand?: string;
+ get lineActive() { return !!this.job?.line; }
  get active() { return !!this.job; }
  constructor(private engine: ActionEngine, private robot: RobotAdapter, private sensors: () => SensorState,
   private allowed: () => boolean, private status: (message: string) => void, private now = () => performance.now()) {}
@@ -77,8 +85,16 @@ export class FinchNavigation {
   return this.begin(start,Infinity,[1,1],true,speed,'Keep Distance active',undefined,undefined,
    {target,tolerance,direction:null,motionSince:this.now()});
  }
+ async lineFollow(speed:number,sensitivity:number) {
+  if(this.active||!this.allowed()||!this.robot.connected||!this.robot.setWheelSpeeds||
+   !Number.isFinite(speed)||speed<=0||speed>100||!Number.isFinite(sensitivity)||sensitivity<0||sensitivity>100)return false;
+  const start=encoderPair(this.sensors(),this.now())??{left:0,right:0},lines=freshLines(this.sensors(),this.now());
+  if(!lines)return false;
+  return this.begin(start,Infinity,[1,1],true,speed,'Line Follow active',undefined,undefined,undefined,
+   {sensitivity,error:0,on:lines.map(v=>v<LINE_FOLLOW.blackBelow) as [boolean,boolean],stamp:'',side:0,lastBlackAt:null,output:[speed,speed]});
+ }
  // Sensor updates can stop forward navigation immediately without another polling loop.
- sensorsUpdated() { if(this.job?.safety||this.job?.keep)void this.tick(); }
+ sensorsUpdated() { if(this.job?.safety||this.job?.keep||this.job?.line)void this.tick(); }
  async returnToBase(recording: EncoderRecording, speed: number) {
   if(this.active || !this.allowed() || !this.robot.connected || !this.robot.setWheelSpeeds ||
    !Number.isFinite(speed) || speed<=0 || speed>100 || !recording.origin || !recording.segments.length) return false;
@@ -93,10 +109,10 @@ export class FinchNavigation {
    `Returning to Base · 1/${commands.length}`,route);
  }
  private async begin(start:{left:number;right:number},target:number,signs:[number,number],straight:boolean,speed:number,
-  message:string,route?:ReturnRoute,safety?:ForwardSafety,keep?:KeepDistanceState) {
+  message:string,route?:ReturnRoute,safety?:ForwardSafety,keep?:KeepDistanceState,line?:LineState) {
   const began=this.now();
   const job: NonNullable<FinchNavigation['job']> = { owner: `navigation-${crypto.randomUUID()}`, abort: new AbortController(), start,target,signs,straight,speed,
-   began,progress:[0,0],advanced:[began,began],ready:false,route,safety,keep };
+   began,progress:[0,0],advanced:[began,began],ready:false,route,safety,keep,line };
   this.job=job;this.lastCommand=undefined;this.status(message);
   this.timer = setInterval(() => { void this.tick(); }, NAVIGATION.tickMs);
   // Claim the same wheel owner as Manual Drive using a zero-speed continuous action.
@@ -120,7 +136,7 @@ export class FinchNavigation {
  }
  private async tick() {
   const j=this.job; if (!j) return;
-  const now=this.now(), pair=encoderPair(this.sensors(),now);
+  const now=this.now(), pair=encoderPair(this.sensors(),now)??(j.line?{left:0,right:0}:null);
   if (!this.allowed() || !this.robot.connected) { this.cancel(); return; }
   if (!pair) { this.cancel('Navigation stopped: encoder data unavailable'); return; }
   if(j.safety) {
@@ -133,9 +149,10 @@ export class FinchNavigation {
     this.cancel('Drive Until complete');return;
    }
   }
-  if (!j.keep && now-j.began>=NAVIGATION.timeoutMs) { this.cancel('Navigation stopped: timeout'); return; }
+  if (!j.keep && !j.line && now-j.began>=NAVIGATION.timeoutMs) { this.cancel('Navigation stopped: timeout'); return; }
   if (!j.ready || j.advancing) return;
   if (this.engine.activeMotorOwnerRuleId!==j.owner) { this.cancel('Navigation stopped: wheel ownership changed'); return; }
+  if(j.line){await this.tickLine(j,now);return;}
   if(j.keep){await this.tickKeep(j,pair,now);return;}
   const progress=[(pair.left-j.start.left)*j.signs[0],(pair.right-j.start.right)*j.signs[1]];
   const done=progress.map(p=>p>=j.target-NAVIGATION.toleranceRotations);
@@ -174,6 +191,45 @@ export class FinchNavigation {
   const correction=Math.max(-NAVIGATION.maxCorrection,Math.min(NAVIGATION.maxCorrection,(progress[0]-progress[1])*(j.straight ? NAVIGATION.straightDriftGain : NAVIGATION.driftGain)));
   const output=[base-correction,base+correction].map((v,i)=>done[i]?0:Math.round(Math.max(0,Math.min(j.speed,v)))*j.signs[i]);
   await this.sendWheels(j,output);
+ }
+ private async tickLine(j:NonNullable<FinchNavigation['job']>,now:number) {
+  const line=j.line!,state=this.sensors(),values=freshLines(state,now);
+  if(!values){this.cancel('Line Follow stopped: line sensor data unavailable');return;}
+  values.forEach((v,i)=>{
+   if(v<LINE_FOLLOW.blackBelow)line.on[i]=true;
+   else if(v>LINE_FOLLOW.whiteAbove)line.on[i]=false;
+  });
+  if(line.on.every(Boolean)){this.cancel('Line Follow stopped: both sensors on black');return;}
+  if(!line.on.some(Boolean)){
+   if(line.lastBlackAt!==null && now-line.lastBlackAt<LINE_FOLLOW.reacquireMs){
+    const elapsed=now-line.lastBlackAt;
+    this.status(line.side===1?'REACQUIRE LEFT':'REACQUIRE RIGHT');
+    const outer=j.speed*LINE_FOLLOW.reacquireSpeed;
+    const inner=outer*(LINE_FOLLOW.reacquireInner+(1-LINE_FOLLOW.reacquireInner)*elapsed/LINE_FOLLOW.reacquireMs);
+    line.output=(line.side===1?[inner,outer]:[outer,inner]).map(Math.round) as [number,number];
+   }else{
+    line.lastBlackAt=null;line.side=0;line.error=0;line.stamp='';
+    this.status('Line Follow active');
+    line.output=line.output.map(v=>Math.min(j.speed,v+LINE_FOLLOW.resumeStep)) as [number,number];
+   }
+   await this.sendWheels(j,line.output);return;
+  }
+  const side=line.on[0]?1:-1;
+  const stamp=state.finchLineLeft.updatedAt+':'+state.finchLineRight.updatedAt;
+  // Remember actual black sample time, never extend memory by rereading cached data.
+  if(values[side===1?0:1]<LINE_FOLLOW.blackBelow)
+   line.lastBlackAt=state[side===1?'finchLineLeft':'finchLineRight'].updatedAt;
+  this.status(side===1?'CORRECT LEFT':'CORRECT RIGHT');
+  const measured=Math.abs(values[1]-values[0])/100;
+  if(side!==line.side)line.error=measured; // Immediate response to a newly black sensor.
+  else if(stamp!==line.stamp)line.error=LINE_FOLLOW.alpha*measured+(1-LINE_FOLLOW.alpha)*line.error;
+  line.side=side;line.stamp=stamp;
+  const authority=Math.min(1,Math.max(LINE_FOLLOW.minimumAuthority,line.error)*(line.sensitivity/50));
+  // Forward differential steering: stop the inner wheel for a strong correction,
+  // with reduced outer speed. Never reverse during line acquisition.
+  const outer=j.speed*LINE_FOLLOW.correctionSpeed,inner=outer*(1-authority);
+  line.output=(side===1?[inner,outer]:[outer,inner]).map(Math.round) as [number,number];
+  await this.sendWheels(j,line.output);
  }
  private async tickKeep(j:NonNullable<FinchNavigation['job']>,pair:{left:number;right:number},now:number) {
   const keep=j.keep!,distance=freshDistance(this.sensors(),now);
