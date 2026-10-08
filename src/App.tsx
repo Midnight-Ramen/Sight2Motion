@@ -342,7 +342,7 @@ export default function App() {
     setSensorState({});
     if (!connected) return;
     const inputs = [...(project.sensorConfiguration ?? [])];
-    if (robotMode === 'finch') for (const type of ['finchEncoderLeft', 'finchEncoderRight'] as const) {
+    if (robotMode === 'finch') for (const type of ['finchEncoderLeft', 'finchEncoderRight', 'finchDistance'] as const) {
       if (!inputs.some(sensor => sensor.id === type)) inputs.push(finchSensorDescriptor(type));
     }
     if (!inputs.length) return;

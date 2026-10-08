@@ -12,6 +12,7 @@ export class EncoderRecording {
  origin: EncoderPair | null = null;
  segments: RecordedSegment[] = [];
  private active: RecordedSegment | null = null;
+ completeReturn() { this.segments = []; this.active = null; }
  clear() { this.origin = null; this.segments = []; this.active = null; }
  setHome(pair: EncoderPair | null) { if (!pair) return false; this.clear(); this.origin = { ...pair }; return true; }
  relative(pair: EncoderPair | null): EncoderPair | null {

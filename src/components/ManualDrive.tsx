@@ -22,6 +22,7 @@ export function ManualDrive({ engine, robot, connected, running, busy, open, sto
   sensors?: SensorState; stopRevision?: number;
   engine: ActionEngine; connected: boolean; running: boolean; busy: boolean; open: boolean;
 }) {
+  const [navigationActive,setNavigationActive]=useState(false);
   const cancelNavigation = useRef<(() => void) | null>(null);
   const [recording] = useState(() => new EncoderRecording());
   const [, refresh] = useState(0);
@@ -93,13 +94,13 @@ export function ManualDrive({ engine, robot, connected, running, busy, open, sto
   return <section className="manual-drive" aria-label="Manual Drive">
     <h3>Manual Drive</h3>
     <div className="home-controls">
-      <button disabled={!connected || running || busy || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>
-      <button disabled={!recording.origin} onClick={() => { recording.clear(); refresh(value => value + 1); }}>Clear Home</button>
+      <button disabled={!connected || running || busy || navigationActive || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>
+      <button disabled={!recording.origin || navigationActive} onClick={() => { recording.clear(); refresh(value => value + 1); }}>Clear Home</button>
     </div>
     <small aria-label="Encoder recording">Home: {recording.origin ? 'Set' : 'Not set'} · Δ Left: {format(recording.relative(pair())?.left)} · Δ Right: {format(recording.relative(pair())?.right)} · Segments: {recording.segments.length}</small>
     <label>Speed %<NumericSlider aria-label="Manual drive speed" min={0} max={100} step={1} value={speed}
       onChange={event => setSpeed(Math.max(0, Math.min(100, +event.target.value)))} /></label>
-    {robot && <NavigationControls engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
+    {robot && <NavigationControls recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
     <div className="manual-drive-pad">
       {([['forward', ArrowUp], ['left', ArrowLeft], ['backward', ArrowDown], ['right', ArrowRight]] as const).map(([value, Icon]) =>
         <button key={value} className={`drive-${value}`} aria-label={`Drive ${value}`} aria-pressed={direction === value}
