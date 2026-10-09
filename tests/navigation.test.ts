@@ -378,3 +378,48 @@ it('Continue stops if a marker never clears',async()=>{
  for(let i=0;i<31;i++){await s.advance(100);s.lines(15,15);await s.nav.sensorsUpdated(true);}
  expect(s.nav.active).toBe(false);expect(s.status).toHaveBeenLastCalledWith('Line Follow stopped: marker crossing timeout');
 });
+it.each(['left','right'] as const)('road sign %s pauses paired Line Follow and resumes it after calibrated intersection turn',async direction=>{
+ const s=await setup();s.lines(99,99);await s.nav.lineFollow(20,'stop',true);await s.nav.sensorsUpdated(true);
+ expect(await s.nav.roadSign(direction,20)).toBe(true);expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);
+ expect(await s.nav.roadSign(direction,20)).toBe(false);
+ await s.advance(150,0,0);s.lines(99,99);await s.nav.sensorsUpdated(true);await s.advance(100,0,0);
+ const sign=direction==='left'?-1:1;expect(Math.sign(s.wheel.mock.calls.at(-1)![0])).toBe(sign);
+ s.lines(99,99);await s.advance(100,geometry.turnRotations(85)*sign,-geometry.turnRotations(85)*sign);
+ await s.advance(100);s.lines(99,99);await s.nav.sensorsUpdated(true);s.lines(99,15);await s.nav.sensorsUpdated(true);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([20,0]);expect(s.nav.lineSensorIds).toEqual(['finchLineLeft','finchLineRight']);s.nav.cancel();
+});
+it('road sign Continue leaves motion alone and Stop holds the line owner',async()=>{
+ const s=await setup();s.lines(99,99);await s.nav.lineFollow(20);const count=s.wheel.mock.calls.length;
+ expect(await s.nav.roadSign('continue',20)).toBe(true);expect(s.wheel).toHaveBeenCalledTimes(count);
+ await s.nav.roadSign('stop',20);expect(s.nav.active).toBe(true);expect(s.engine.activeMotorOwnerRuleId).not.toBeNull();expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);s.nav.cancel();
+});
+it.each(['cancel','disconnect','disabled','stale'])('road sign turn cannot resume after %s',async reason=>{
+ const s=await setup();s.lines(99,99);await s.nav.lineFollow(20,'stop',true);await s.nav.roadSign('left',20);
+ if(reason==='cancel')s.nav.cancel();if(reason==='disconnect')s.robot.connected=false;if(reason==='disabled')s.disable();
+ await s.advance(800);expect(s.nav.active).toBe(false);const count=s.wheel.mock.calls.length;
+ s.lines(99,99);await s.nav.sensorsUpdated(true);expect(s.wheel).toHaveBeenCalledTimes(count);
+});
+it('road sign turns cannot interrupt other navigation ownership',async()=>{
+ const s=await setup();await s.nav.start({kind:'distance',direction:'forward',amount:30},20);
+ expect(await s.nav.roadSign('left',20)).toBe(false);s.nav.cancel();
+});
+
+it('vision hold stays stopped for two seconds then resumes the same paired session',async()=>{
+ const s=await setup();s.lines(99,99);await s.nav.lineFollow(20,'stop',true);await s.nav.sensorsUpdated(true);const owner=s.engine.activeMotorOwnerRuleId;
+ await s.nav.roadSign('stop',20);const count=s.wheel.mock.calls.length;
+ for(let i=0;i<20;i++){s.lines(99,99);await s.advance(100);await s.nav.sensorsUpdated(true);}
+ expect(s.wheel).toHaveBeenCalledTimes(count);expect(s.nav.active).toBe(true);expect(s.engine.activeMotorOwnerRuleId).toBe(owner);
+ expect(await s.nav.roadSign('resume',20)).toBe(true);s.lines(99,15);await s.nav.sensorsUpdated(true);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([20,0]);
+ await s.nav.roadSign('stop',20);expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([0,0]);s.nav.cancel();
+});
+it.each(['global STOP','manual takeover','disconnect','stale','disabled'])('vision hold cannot resume after %s',async reason=>{
+ const s=await setup();s.lines(99,99);await s.nav.lineFollow(20,'stop',true);await s.nav.roadSign('stop',20);
+ if(reason==='global STOP'||reason==='manual takeover')s.nav.cancel();
+ if(reason==='disconnect')s.robot.connected=false;if(reason==='disabled')s.disable();
+ if(reason==='stale')await s.advance(800);else await s.advance(100);
+ expect(await s.nav.roadSign('resume',20)).toBe(false);expect(s.nav.active).toBe(false);
+});
+it('vision Stop while idle never creates a resumable line session',async()=>{
+ const s=await setup();await s.nav.roadSign('stop',20);expect(await s.nav.roadSign('resume',20)).toBe(false);expect(s.nav.active).toBe(false);
+});

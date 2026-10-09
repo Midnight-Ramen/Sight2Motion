@@ -492,3 +492,6 @@ label.mirror-control input { margin: 0; width: auto; }
 .navigation-controls input[type="checkbox"] { width: auto; }
 .home-recording { margin-top: 8px; font-size: 12px; }
 .home-recording summary { cursor: pointer; margin-bottom: 6px; }
+
+.road-sign-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; width:100%; }
+.road-sign-row select { flex:1 1 100px; min-width:0; max-width:100%; }

@@ -1,3 +1,5 @@
+import {VisionRoadSigns} from './VisionRoadSigns';
+import type {RoadSignVision} from '../core/RoadSigns';
 import type { SensorProvider } from '../core/SensorProvider';
 import { NumericSlider } from './NumericSlider';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
@@ -7,7 +9,8 @@ import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
 import type { ActionEngine } from '../core/ActionEngine';
 import type { RobotAdapter } from '../core/RobotAdapter';
 import type { SensorState } from '../core/Sensors';
-export function NavigationControls({ engine, robot, lineSensorProvider, sensors, enabled, speed, stopRevision, cancelRef, recording, onActiveChange }: {
+export function NavigationControls({ engine, robot, roadVision, lineSensorProvider, sensors, enabled, speed, stopRevision, cancelRef, recording, onActiveChange }: {
+ roadVision?:RoadSignVision;
  lineSensorProvider?: SensorProvider;
  recording: EncoderRecording; onActiveChange: (active:boolean)=>void;
  engine: ActionEngine; robot: RobotAdapter; sensors: SensorState; enabled: boolean; speed: number; stopRevision: number;
@@ -64,6 +67,7 @@ export function NavigationControls({ engine, robot, lineSensorProvider, sensors,
    <option value="">Choose a behavior…</option>
    <optgroup label="Distance"><option disabled={behaviors.includes('Drive Until')}>Drive Until</option><option disabled={behaviors.includes('Keep Distance')}>Keep Distance</option></optgroup>
    <optgroup label="Line"><option disabled={behaviors.includes('Line Follow')}>Line Follow</option></optgroup>
+   <optgroup label="Vision"><option disabled={behaviors.includes('Vision Road Signs')}>Vision Road Signs</option></optgroup>
   </select></label></div>}
   {behaviors.includes('Drive Until')&&<div className="behavior-card" aria-label="Drive Until controls"><header><strong>Drive Until</strong><button aria-label="Hide Drive Until" title="Hide controls only" onClick={()=>hideBehavior('Drive Until')}>×</button></header><span>Distance sensor</span>
    <select aria-label="Drive Until operator" value={untilOperator} onChange={e=>setUntilOperator(e.target.value as DriveUntilCondition['operator'])}>
@@ -90,6 +94,7 @@ export function NavigationControls({ engine, robot, lineSensorProvider, sensors,
     onClick={()=>void controller.lineFollow(lineSpeed,lineEvent,true)}>Start Line Follow</button>
    <small aria-label="Line Follow readings">L: {lineValues?.[0]??'—'} R: {lineValues?.[1]??'—'} · {lineValues?`pair age: ${Math.max(0,Math.round(performance.now()-Math.min(sensors.finchLineLeft.updatedAt,sensors.finchLineRight.updatedAt)))} ms · `:''}{lineLabel}</small>
   </div>}
+  {behaviors.includes('Vision Road Signs')&&roadVision&&<VisionRoadSigns motionActive={controller.active} vision={roadVision} available={enabled} resetKey={`${stopRevision}:${controller.stopRevision}`} onCancelHold={()=>controller.cancelVisionHold()} onAction={action=>controller.roadSign(action,speed)} onHide={()=>hideBehavior('Vision Road Signs')}/>}
   {!distanceFresh&&(emergencyEnabled||behaviors.includes('Drive Until'))&&<small>Fresh distance sensor data is required for Drive Until and emergency braking.</small>}
   <small role="status">{status}</small>
  </div>;

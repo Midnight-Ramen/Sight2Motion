@@ -1,3 +1,4 @@
+import type {RoadSignVision} from '../core/RoadSigns';
 import type { SensorProvider } from '../core/SensorProvider';
 import { NavigationControls } from './NavigationControls';
 import type { RobotAdapter } from '../core/RobotAdapter';
@@ -18,7 +19,8 @@ export const driveKeys: Readonly<Record<string, Direction>> = {
 const editing = (target: EventTarget | null) => target instanceof Element &&
   !!target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
 
-export function ManualDrive({ engine, robot, lineSensorProvider, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+  roadVision?:RoadSignVision;
   robot?: RobotAdapter; lineSensorProvider?: SensorProvider;
   sensors?: SensorState; stopRevision?: number;
   engine: ActionEngine; connected: boolean; running: boolean; busy: boolean; open: boolean;
@@ -112,7 +114,7 @@ export function ManualDrive({ engine, robot, lineSensorProvider, connected, runn
         </button>)}
     </div>
     <small>{running ? 'Stop rules to drive manually.' : !connected ? 'Connect Finch to drive manually.' : 'Arrow Keys / WASD · Hold to move, release to stop.'}</small>
-    {robot && <NavigationControls lineSensorProvider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
+    {robot && <NavigationControls roadVision={roadVision} lineSensorProvider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
     <details className="home-recording"><summary>Home &amp; path recording</summary>
     <div className="home-controls">
       <button disabled={!connected || running || busy || navigationActive || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>

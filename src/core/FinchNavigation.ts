@@ -18,7 +18,7 @@ export function lineDirection(left:number,right:number) {
 export type LineEventMode = 'stop' | 'continue' | 'left' | 'right';
 export const FINCH_INTERSECTION_TURN_DEG=85;
 export const LINE_EVENT={debounceMs:100,crossingTimeoutMs:3000,crossingSpeed:.5,settleBeforeMs:150,settleAfterMs:100,turnSpeed:12} as const;
-type LineState={pairDriven:boolean;pairStamp:string;pauseUntil:number|null;afterTurn:boolean;followSpeed:number;mode:LineEventMode;markerSince:number|null;armed:boolean;crossingSince:number|null;turning:boolean;on:[boolean,boolean];};
+type LineState={visionHold?:boolean;turnDirection?:'left'|'right';pairDriven:boolean;pairStamp:string;pauseUntil:number|null;afterTurn:boolean;followSpeed:number;mode:LineEventMode;markerSince:number|null;armed:boolean;crossingSince:number|null;turning:boolean;on:[boolean,boolean];};
 export function freshLines(state:SensorState,now:number):[number,number]|null {
  const samples=[state.finchLineLeft,state.finchLineRight];
  if(samples.some(s=>!s||s.reading?.kind!=='number'||!Number.isFinite(s.reading.value)||s.reading.value<0||s.reading.value>100||now<s.updatedAt||now-s.updatedAt>SENSOR_MAX_AGE))return null;
@@ -58,6 +58,9 @@ export class FinchNavigation {
   signs:[number,number]; straight:boolean; speed:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety; keep?:KeepDistanceState; line?:LineState };
  private timer?: ReturnType<typeof setInterval>;
  private sending = false;
+ private stopCount=0;
+ get stopRevision(){return this.stopCount;}
+ private wheelSettled?:Promise<void>;
  private lastCommand?: string;
  get lineSensorIds():string[] {
   const line=this.job?.line;if(!line)return [];
@@ -69,6 +72,39 @@ export class FinchNavigation {
  get active() { return !!this.job; }
  constructor(private engine: ActionEngine, private robot: RobotAdapter, private sensors: () => SensorState,
   private allowed: () => boolean, private status: (message: string) => void, private now = () => performance.now()) {}
+ cancelVisionHold(){if(this.job?.line?.visionHold)this.cancel('Vision hold cancelled');}
+ async roadSign(action:LineEventMode|'resume',speed:number){
+  if(!this.allowed()||!this.robot.connected)return false;
+  if(action==='resume'){
+   const j=this.job;if(!j?.line?.visionHold||j.advancing)return false;
+   if(!freshLines(this.sensors(),this.now())||this.engine.activeMotorOwnerRuleId!==j.owner){this.cancel('Vision hold safety abort');return false;}
+   j.line.visionHold=false;j.line.pairStamp='';this.status('Line Follow active');return true;
+  }
+  if(action==='stop'){
+   const j=this.job;
+   if(!j?.line){this.cancel('ROAD SIGN → STOP');await this.engine.stop();return true;}
+   j.line.visionHold=true;j.advancing=true;
+   try{
+    await this.wheelSettled?.catch(()=>{});if(this.job!==j)return false;
+    await this.sendWheels(j,[0,0]);if(this.job!==j)return false;
+    // A vision stop preserves only the line session, never a partly completed turn.
+    j.line.turning=false;j.line.pauseUntil=null;j.line.crossingSince=null;j.speed=j.line.followSpeed;
+    this.status('ROAD SIGN → STOP');return true;
+   }finally{j.advancing=false;}
+  }
+  if(action==='continue')return true;
+  const j=this.job;
+  if(!j)return this.start({kind:'turn',direction:action,amount:FINCH_INTERSECTION_TURN_DEG},Math.min(speed,LINE_EVENT.turnSpeed));
+  if(!j.line||j.line.visionHold||j.line.turning||j.line.pauseUntil!==null||j.advancing)return false;
+  // Pause steering synchronously, then reuse the intersection turn/settle path.
+  j.advancing=true;
+  try{
+   await this.wheelSettled?.catch(()=>{});if(this.job!==j)return false;
+   await this.sendWheels(j,[0,0]);if(this.job!==j)return false;
+   j.line.turnDirection=action;j.line.pauseUntil=this.now()+LINE_EVENT.settleBeforeMs;j.line.afterTurn=false;
+   this.status(action==='left'?'INTERSECTION → LEFT':'INTERSECTION → RIGHT');return true;
+  }finally{j.advancing=false;}
+ }
  async start(command: NavigationCommand, speed: number, emergencyDistance?:number) {
   if (this.active || !this.allowed() || !this.robot.connected || !this.robot.setWheelSpeeds ||
    !Number.isFinite(speed) || speed <= 0 || speed > 100 || !Number.isFinite(command.amount) || command.amount <= 0 ||
@@ -143,6 +179,7 @@ export class FinchNavigation {
  }
  private finish(message:string,success:boolean) {
   const job = this.job; if (!job) return;
+  this.stopCount++;
   this.job = undefined; job.abort.abort(); clearInterval(this.timer); this.timer = undefined;
   void this.engine.stop();
   if(job.route) { if(success)job.route.recording.completeReturn();else job.route.recording.clear(); }
@@ -168,6 +205,7 @@ export class FinchNavigation {
   if (this.engine.activeMotorOwnerRuleId!==j.owner) { this.cancel('Navigation stopped: wheel ownership changed'); return; }
   if(j.line){
    if(!freshLines(this.sensors(),now)){this.cancel('Line Follow stopped: line sensor data unavailable');return;}
+   if(j.line.visionHold)return;
    if(!j.line.turning){if(!j.line.pairDriven||completePair)await this.tickLine(j,now);return;}
   }
   if(j.keep){await this.tickKeep(j,pair,now);return;}
@@ -236,7 +274,7 @@ export class FinchNavigation {
    else{
     const pair=encoderPair(state,now);
     if(!pair){this.cancel('Navigation stopped: encoder data unavailable');return true;}
-    const plan=motion({kind:'turn',direction:line.mode==='left'?'left':'right',amount:FINCH_INTERSECTION_TURN_DEG});
+    const plan=motion({kind:'turn',direction:line.turnDirection??(line.mode==='left'?'left':'right'),amount:FINCH_INTERSECTION_TURN_DEG});
     j.start=pair;j.target=plan.target;j.signs=plan.signs;j.straight=false;j.speed=Math.min(line.followSpeed,LINE_EVENT.turnSpeed);
     j.began=now;j.progress=[0,0];j.advanced=[now,now];line.turning=true;return true;
    }
@@ -260,7 +298,7 @@ export class FinchNavigation {
     j.advancing=true;
     try{
      await this.sendWheels(j,[0,0]);if(this.job!==j)return true;
-     line.pauseUntil=this.now()+LINE_EVENT.settleBeforeMs;line.afterTurn=false;
+     line.turnDirection=line.mode==='left'?'left':'right';line.pauseUntil=this.now()+LINE_EVENT.settleBeforeMs;line.afterTurn=false;
      this.status(line.mode==='left'?'INTERSECTION → LEFT':'INTERSECTION → RIGHT');
     }catch{if(this.job===j)this.cancel('Intersection turn failed');}finally{j.advancing=false;}
     return true;
@@ -300,7 +338,8 @@ export class FinchNavigation {
   const key=output.join(','); if(this.sending||key===this.lastCommand)return;
   this.sending=true;
   try {
-   await this.robot.setWheelSpeeds!(output[0],output[1],0,j.abort.signal,'continuous');
+   this.wheelSettled=this.robot.setWheelSpeeds!(output[0],output[1],0,j.abort.signal,'continuous');
+   await this.wheelSettled;
    if(this.job===j)this.lastCommand=key;
   } catch {if(this.job===j)this.cancel('Navigation command failed');}
   finally {this.sending=false;}
