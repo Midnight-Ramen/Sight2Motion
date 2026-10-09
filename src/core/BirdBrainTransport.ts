@@ -3,7 +3,15 @@ export class BirdBrainTransport {
   static readonly origin = 'http://127.0.0.1:30061';
   private pending = new Set<AbortController>();
   constructor(private fetcher: typeof fetch = (...args) => fetch(...args)) {}
-  async request(path: string, signal?: AbortSignal, emergency = false): Promise<string> {
+  private serialized=false;
+  private active=new Set<Promise<string>>();
+  setLineSampling(active:boolean){this.serialized=active;}
+  request(path:string,signal?:AbortSignal,emergency=false):Promise<string>{
+    const waits=this.serialized&&!emergency?[...this.active]:[];
+    const task=(async()=>{await Promise.allSettled(waits);return this.performRequest(path,signal,emergency);})();
+    this.active.add(task);void task.finally(()=>this.active.delete(task)).catch(()=>{});return task;
+  }
+  private async performRequest(path: string, signal?: AbortSignal, emergency = false): Promise<string> {
     if (!path.startsWith('/hummingbird/')) throw new Error('Unsupported BirdBrain route.');
     const controller = new AbortController();
     if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');

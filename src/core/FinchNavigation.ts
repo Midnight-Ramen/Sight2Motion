@@ -9,8 +9,16 @@ export const NAVIGATION = { tickMs: 100, timeoutMs: 30000, stallMs: 1500, progre
  toleranceRotations: .02, slowdownRotations: .5, minimumSpeed: 10, turnSlowdownRotations: .9, turnMinimumSpeed: 5, turnSlowdownExponent: 1.3, driftGain: 20, straightDriftGain: 30, maxCorrection: 5, homeToleranceRotations: .02 } as const;
 export const KEEP_DISTANCE = { hysteresisCm: .5, speedPerCm: 2, minimumSpeed: 5 } as const;
 type KeepDistanceState={target:number;tolerance:number;direction:number|null;motionSince:number};
-export const LINE_FOLLOW={blackBelow:40,whiteAbove:70,alpha:.3,deadband:.04,resumeStep:5,minimumAuthority:.9,correctionSpeed:.9,reacquireMs:150,reacquireSpeed:.5,reacquireInner:.3} as const;
-type LineState={sensitivity:number;error:number;on:[boolean,boolean];stamp:string;side:number;lastBlackAt:number|null;output:[number,number]};
+export const LINE_THRESHOLD=91;
+// Marker actions share the paired Line Follow ownership and control path.
+export const LINE_INTERSECTIONS_ENABLED=true;
+export function lineDirection(left:number,right:number) {
+ return left>LINE_THRESHOLD&&right<LINE_THRESHOLD?'RIGHT':left<LINE_THRESHOLD&&right>LINE_THRESHOLD?'LEFT':'STRAIGHT';
+}
+export type LineEventMode = 'stop' | 'continue' | 'left' | 'right';
+export const FINCH_INTERSECTION_TURN_DEG=85;
+export const LINE_EVENT={debounceMs:100,crossingTimeoutMs:3000,crossingSpeed:.5,settleBeforeMs:150,settleAfterMs:100,turnSpeed:12} as const;
+type LineState={pairDriven:boolean;pairStamp:string;pauseUntil:number|null;afterTurn:boolean;followSpeed:number;mode:LineEventMode;markerSince:number|null;armed:boolean;crossingSince:number|null;turning:boolean;on:[boolean,boolean];};
 export function freshLines(state:SensorState,now:number):[number,number]|null {
  const samples=[state.finchLineLeft,state.finchLineRight];
  if(samples.some(s=>!s||s.reading?.kind!=='number'||!Number.isFinite(s.reading.value)||s.reading.value<0||s.reading.value>100||now<s.updatedAt||now-s.updatedAt>SENSOR_MAX_AGE))return null;
@@ -51,6 +59,12 @@ export class FinchNavigation {
  private timer?: ReturnType<typeof setInterval>;
  private sending = false;
  private lastCommand?: string;
+ get lineSensorIds():string[] {
+  const line=this.job?.line;if(!line)return [];
+  return line.turning||(line.pauseUntil!==null&&!line.afterTurn)
+   ? ['finchLineLeft','finchLineRight','finchEncoderLeft','finchEncoderRight']
+   : ['finchLineLeft','finchLineRight'];
+ }
  get lineActive() { return !!this.job?.line; }
  get active() { return !!this.job; }
  constructor(private engine: ActionEngine, private robot: RobotAdapter, private sensors: () => SensorState,
@@ -85,16 +99,16 @@ export class FinchNavigation {
   return this.begin(start,Infinity,[1,1],true,speed,'Keep Distance active',undefined,undefined,
    {target,tolerance,direction:null,motionSince:this.now()});
  }
- async lineFollow(speed:number,sensitivity:number) {
+ async lineFollow(speed:number,mode:LineEventMode='stop',pairDriven=false) {
   if(this.active||!this.allowed()||!this.robot.connected||!this.robot.setWheelSpeeds||
-   !Number.isFinite(speed)||speed<=0||speed>100||!Number.isFinite(sensitivity)||sensitivity<0||sensitivity>100)return false;
+   !Number.isFinite(speed)||speed<=0||speed>100)return false;
   const start=encoderPair(this.sensors(),this.now())??{left:0,right:0},lines=freshLines(this.sensors(),this.now());
   if(!lines)return false;
   return this.begin(start,Infinity,[1,1],true,speed,'Line Follow active',undefined,undefined,undefined,
-   {sensitivity,error:0,on:lines.map(v=>v<LINE_FOLLOW.blackBelow) as [boolean,boolean],stamp:'',side:0,lastBlackAt:null,output:[speed,speed]});
+   {pairDriven,pairStamp:'',pauseUntil:null,afterTurn:false,followSpeed:speed,mode,markerSince:null,armed:true,crossingSince:null,turning:false,on:lines.map(v=>v<LINE_THRESHOLD) as [boolean,boolean]});
  }
  // Sensor updates can stop forward navigation immediately without another polling loop.
- sensorsUpdated() { if(this.job?.safety||this.job?.keep||this.job?.line)void this.tick(); }
+ async sensorsUpdated(completePair=false) { if(this.job?.safety||this.job?.keep||this.job?.line)await this.tick(completePair); }
  async returnToBase(recording: EncoderRecording, speed: number) {
   if(this.active || !this.allowed() || !this.robot.connected || !this.robot.setWheelSpeeds ||
    !Number.isFinite(speed) || speed<=0 || speed>100 || !recording.origin || !recording.segments.length) return false;
@@ -134,9 +148,9 @@ export class FinchNavigation {
   if(job.route) { if(success)job.route.recording.completeReturn();else job.route.recording.clear(); }
   this.status(message);
  }
- private async tick() {
+ private async tick(completePair=false) {
   const j=this.job; if (!j) return;
-  const now=this.now(), pair=encoderPair(this.sensors(),now)??(j.line?{left:0,right:0}:null);
+  const now=this.now(), pair=encoderPair(this.sensors(),now)??(j.line&&!j.line.turning?{left:0,right:0}:null);
   if (!this.allowed() || !this.robot.connected) { this.cancel(); return; }
   if (!pair) { this.cancel('Navigation stopped: encoder data unavailable'); return; }
   if(j.safety) {
@@ -149,14 +163,23 @@ export class FinchNavigation {
     this.cancel('Drive Until complete');return;
    }
   }
-  if (!j.keep && !j.line && now-j.began>=NAVIGATION.timeoutMs) { this.cancel('Navigation stopped: timeout'); return; }
+  if (!j.keep && (!j.line||j.line.turning) && now-j.began>=NAVIGATION.timeoutMs) { this.cancel('Navigation stopped: timeout'); return; }
   if (!j.ready || j.advancing) return;
   if (this.engine.activeMotorOwnerRuleId!==j.owner) { this.cancel('Navigation stopped: wheel ownership changed'); return; }
-  if(j.line){await this.tickLine(j,now);return;}
+  if(j.line){
+   if(!freshLines(this.sensors(),now)){this.cancel('Line Follow stopped: line sensor data unavailable');return;}
+   if(!j.line.turning){if(!j.line.pairDriven||completePair)await this.tickLine(j,now);return;}
+  }
   if(j.keep){await this.tickKeep(j,pair,now);return;}
   const progress=[(pair.left-j.start.left)*j.signs[0],(pair.right-j.start.right)*j.signs[1]];
   const done=progress.map(p=>p>=j.target-NAVIGATION.toleranceRotations);
   if (done.every(Boolean)) {
+   if(j.line?.turning){
+    if(this.sending)return;
+    await this.sendWheels(j,[0,0]);if(this.job!==j)return;
+    j.line.turning=false;j.line.pauseUntil=this.now()+LINE_EVENT.settleAfterMs;j.line.afterTurn=true;j.speed=j.line.followSpeed;
+    this.status('FOLLOWING');return;
+   }
    if(!j.route) {this.cancel('Navigation complete');return;}
    if(this.sending)return;
    j.advancing=true;
@@ -193,43 +216,59 @@ export class FinchNavigation {
   await this.sendWheels(j,output);
  }
  private async tickLine(j:NonNullable<FinchNavigation['job']>,now:number) {
-  const line=j.line!,state=this.sensors(),values=freshLines(state,now);
+  const values=freshLines(this.sensors(),now);
   if(!values){this.cancel('Line Follow stopped: line sensor data unavailable');return;}
-  values.forEach((v,i)=>{
-   if(v<LINE_FOLLOW.blackBelow)line.on[i]=true;
-   else if(v>LINE_FOLLOW.whiteAbove)line.on[i]=false;
-  });
-  if(line.on.every(Boolean)){this.cancel('Line Follow stopped: both sensors on black');return;}
-  if(!line.on.some(Boolean)){
-   if(line.lastBlackAt!==null && now-line.lastBlackAt<LINE_FOLLOW.reacquireMs){
-    const elapsed=now-line.lastBlackAt;
-    this.status(line.side===1?'REACQUIRE LEFT':'REACQUIRE RIGHT');
-    const outer=j.speed*LINE_FOLLOW.reacquireSpeed;
-    const inner=outer*(LINE_FOLLOW.reacquireInner+(1-LINE_FOLLOW.reacquireInner)*elapsed/LINE_FOLLOW.reacquireMs);
-    line.output=(line.side===1?[inner,outer]:[outer,inner]).map(Math.round) as [number,number];
-   }else{
-    line.lastBlackAt=null;line.side=0;line.error=0;line.stamp='';
-    this.status('Line Follow active');
-    line.output=line.output.map(v=>Math.min(j.speed,v+LINE_FOLLOW.resumeStep)) as [number,number];
+  if(LINE_INTERSECTIONS_ENABLED && await this.tickLineMarker(j,now))return;
+  const state=this.sensors(),stamp=state.finchLineLeft.updatedAt+':'+state.finchLineRight.updatedAt+':'+values.join(',');
+  if(j.line!.pairStamp===stamp)return;
+  j.line!.pairStamp=stamp;
+  const direction=lineDirection(...values);
+  this.status('Line Follow active');
+  await this.sendWheels(j,direction==='RIGHT'?[j.speed,0]:direction==='LEFT'?[0,j.speed]:[j.speed,j.speed]);
+ }
+ private async tickLineMarker(j:NonNullable<FinchNavigation['job']>,now:number) {
+  const line=j.line!,state=this.sensors(),values=freshLines(state,now);
+  if(!values){this.cancel('Line Follow stopped: line sensor data unavailable');return true;}
+  if(line.pauseUntil!==null){
+   if(now<line.pauseUntil)return true;
+   line.pauseUntil=null;
+   if(line.afterTurn){line.afterTurn=false;line.crossingSince=now;}
+   else{
+    const pair=encoderPair(state,now);
+    if(!pair){this.cancel('Navigation stopped: encoder data unavailable');return true;}
+    const plan=motion({kind:'turn',direction:line.mode==='left'?'left':'right',amount:FINCH_INTERSECTION_TURN_DEG});
+    j.start=pair;j.target=plan.target;j.signs=plan.signs;j.straight=false;j.speed=Math.min(line.followSpeed,LINE_EVENT.turnSpeed);
+    j.began=now;j.progress=[0,0];j.advanced=[now,now];line.turning=true;return true;
    }
-   await this.sendWheels(j,line.output);return;
   }
-  const side=line.on[0]?1:-1;
-  const stamp=state.finchLineLeft.updatedAt+':'+state.finchLineRight.updatedAt;
-  // Remember actual black sample time, never extend memory by rereading cached data.
-  if(values[side===1?0:1]<LINE_FOLLOW.blackBelow)
-   line.lastBlackAt=state[side===1?'finchLineLeft':'finchLineRight'].updatedAt;
-  this.status(side===1?'CORRECT LEFT':'CORRECT RIGHT');
-  const measured=Math.abs(values[1]-values[0])/100;
-  if(side!==line.side)line.error=measured; // Immediate response to a newly black sensor.
-  else if(stamp!==line.stamp)line.error=LINE_FOLLOW.alpha*measured+(1-LINE_FOLLOW.alpha)*line.error;
-  line.side=side;line.stamp=stamp;
-  const authority=Math.min(1,Math.max(LINE_FOLLOW.minimumAuthority,line.error)*(line.sensitivity/50));
-  // Forward differential steering: stop the inner wheel for a strong correction,
-  // with reduced outer speed. Never reverse during line acquisition.
-  const outer=j.speed*LINE_FOLLOW.correctionSpeed,inner=outer*(1-authority);
-  line.output=(side===1?[inner,outer]:[outer,inner]).map(Math.round) as [number,number];
-  await this.sendWheels(j,line.output);
+  line.on=values.map(v=>v<LINE_THRESHOLD) as [boolean,boolean];
+  const bothWhite=values.every(v=>v>LINE_THRESHOLD);
+  if(bothWhite){line.armed=true;line.markerSince=null;line.crossingSince=null;}
+  if(line.crossingSince!==null){
+   if(now-line.crossingSince>=LINE_EVENT.crossingTimeoutMs){this.cancel('Line Follow stopped: marker crossing timeout');return true;}
+   await this.sendWheels(j,[j.speed*LINE_EVENT.crossingSpeed,j.speed*LINE_EVENT.crossingSpeed]);return true;
+  }
+  if(line.on.every(Boolean)){
+   const sampleAt=Math.min(state.finchLineLeft.updatedAt,state.finchLineRight.updatedAt);
+   if(line.markerSince===null)line.markerSince=sampleAt;
+   if(line.armed && sampleAt-line.markerSince>=LINE_EVENT.debounceMs){
+    if(this.sending)return true;
+    line.armed=false;
+    if(line.mode==='stop'){this.cancel('STOP LINE');return true;}
+    if(line.mode==='continue'){line.crossingSince=now;this.status('FOLLOWING');return true;}
+    if(this.sending)return true;
+    j.advancing=true;
+    try{
+     await this.sendWheels(j,[0,0]);if(this.job!==j)return true;
+     line.pauseUntil=this.now()+LINE_EVENT.settleBeforeMs;line.afterTurn=false;
+     this.status(line.mode==='left'?'INTERSECTION → LEFT':'INTERSECTION → RIGHT');
+    }catch{if(this.job===j)this.cancel('Intersection turn failed');}finally{j.advancing=false;}
+    return true;
+   }
+   return false;
+  }
+  line.markerSince=null;
+  return false;
  }
  private async tickKeep(j:NonNullable<FinchNavigation['job']>,pair:{left:number;right:number},now:number) {
   const keep=j.keep!,distance=freshDistance(this.sensors(),now);

@@ -1,7 +1,7 @@
 import type { SensorProvider } from '../core/SensorProvider';
 import { NumericSlider } from './NumericSlider';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { FinchNavigation, freshDistance, freshLines, type DriveUntilCondition } from '../core/FinchNavigation';
+import { FinchNavigation, freshDistance, freshLines, lineDirection, type LineEventMode, type DriveUntilCondition } from '../core/FinchNavigation';
 import { FINCH_EFFECTIVE_TRACK_WIDTH_CM } from '../core/FinchGeometry';
 import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
 import type { ActionEngine } from '../core/ActionEngine';
@@ -21,19 +21,18 @@ export function NavigationControls({ engine, robot, lineSensorProvider, sensors,
  const [untilValue,setUntilValue]=useState(20),[untilSpeed,setUntilSpeed]=useState(30);
  const [emergencyEnabled,setEmergencyEnabled]=useState(false),[emergencyDistance,setEmergencyDistance]=useState(10);
  const [keepTarget,setKeepTarget]=useState(25),[keepTolerance,setKeepTolerance]=useState(3),[keepSpeed,setKeepSpeed]=useState(30);
- const [lineSpeed,setLineSpeed]=useState(15),[lineSensitivity,setLineSensitivity]=useState(75);
+ const [lineEvent,setLineEvent]=useState<LineEventMode>('stop');
+ const [lineSpeed,setLineSpeed]=useState(20);
  const latest=useRef({sensors,enabled});latest.current={sensors,enabled};
  const [controller]=useState(()=>new FinchNavigation(engine,robot,()=>latest.current.sensors,()=>latest.current.enabled&&!document.hidden,setStatus));
  useEffect(()=>{onActiveChange(controller.active);},[status,controller,onActiveChange]);
  useEffect(()=>{controller.sensorsUpdated();},[sensors,controller]);
  useEffect(()=>{
-  lineSensorProvider?.setPriority(controller.lineActive?['finchLineLeft','finchLineRight']:[]);
+  lineSensorProvider?.setPriority(controller.lineSensorIds,async state=>{latest.current.sensors=state;await controller.sensorsUpdated(true);});
   return()=>lineSensorProvider?.setPriority([]);
  },[status,controller,lineSensorProvider]);
- const lineBlack=useRef([false,false]);
  const lineValues=freshLines(sensors,performance.now());
- lineValues?.forEach((v,i)=>{if(v<40)lineBlack.current[i]=true;else if(v>70)lineBlack.current[i]=false;});
- const lineLabel=lineBlack.current.every(Boolean)?'BOTH BLACK':lineBlack.current[0]?'CORRECT LEFT':lineBlack.current[1]?'CORRECT RIGHT':'CENTER';
+ const lineLabel=lineValues?lineDirection(...lineValues):'No data';
  cancelRef.current=()=>controller.cancel();
  useEffect(()=>{if(!enabled)controller.cancel();},[enabled,controller]);
  useEffect(()=>{controller.cancel();},[stopRevision,controller]);
@@ -84,11 +83,12 @@ export function NavigationControls({ engine, robot, lineSensorProvider, sensors,
   </div>}
   {behaviors.includes('Line Follow')&&<div className="behavior-card" aria-label="Line Follow controls"><header><strong>Line Follow</strong><button aria-label="Hide Line Follow" title="Hide controls only" onClick={()=>hideBehavior('Line Follow')}>×</button></header>
    <label>Speed %<NumericSlider aria-label="Line Follow speed" min={1} max={100} value={lineSpeed} onChange={e=>setLineSpeed(+e.target.value)} /></label>
-   <label>Sensitivity %<NumericSlider aria-label="Line Follow sensitivity" min={0} max={100} value={lineSensitivity} onChange={e=>setLineSensitivity(+e.target.value)} /></label>
+   <label>When both sensors see black<select aria-label="Line marker action" value={lineEvent} disabled={controller.active} onChange={e=>setLineEvent(e.target.value as LineEventMode)}>
+    <option value="stop">Stop</option><option value="continue">Continue</option><option value="left">Turn Left</option><option value="right">Turn Right</option>
+   </select></label>
    <button disabled={!enabled||controller.active||!freshLines(sensors,performance.now())}
-    onClick={()=>void controller.lineFollow(lineSpeed,lineSensitivity)}>Start Line Follow</button>
-   <small>Recommended: 15–20% speed · 70–80% sensitivity</small>
-   <small aria-label="Line Follow readings">L: {lineValues?.[0]??'—'} R: {lineValues?.[1]??'—'} · {(controller.lineActive&&status.startsWith('REACQUIRE'))?status:lineValues?lineLabel:'No data'}</small>
+    onClick={()=>void controller.lineFollow(lineSpeed,lineEvent,true)}>Start Line Follow</button>
+   <small aria-label="Line Follow readings">L: {lineValues?.[0]??'—'} R: {lineValues?.[1]??'—'} · {lineValues?`pair age: ${Math.max(0,Math.round(performance.now()-Math.min(sensors.finchLineLeft.updatedAt,sensors.finchLineRight.updatedAt)))} ms · `:''}{lineLabel}</small>
   </div>}
   {!distanceFresh&&(emergencyEnabled||behaviors.includes('Drive Until'))&&<small>Fresh distance sensor data is required for Drive Until and emergency braking.</small>}
   <small role="status">{status}</small>

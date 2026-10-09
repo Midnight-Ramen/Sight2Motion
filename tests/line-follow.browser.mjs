@@ -17,12 +17,15 @@ try{
  await p.getByRole('button',{name:'+ Add behavior',exact:true}).click();await p.getByLabel('Add behavior',{exact:true}).selectOption('Line Follow');
  const start=p.getByRole('button',{name:'Start Line Follow',exact:true});
  await expect(start).toBeEnabled();
+ await expect(p.getByRole('spinbutton',{name:'Line Follow speed',exact:true})).toHaveValue('20');
+ await expect(p.getByRole('spinbutton',{name:'Line Follow sensitivity',exact:true})).toHaveCount(0);
+ await expect(p.getByLabel('Line marker action')).toHaveValue('stop');
  await p.getByRole('spinbutton',{name:'Line Follow speed',exact:true}).fill('25');
  await expect(p.getByRole('slider',{name:'Line Follow speed slider',exact:true})).toHaveValue('25');
  for(const event of ['space','button','blur','hidden','stale','manual','disconnect']){
   console.log(event);await p.evaluate(()=>window.hardware.available=true);await p.waitForTimeout(1200);await expect(start).toBeEnabled();
   await start.click();await expect(p.getByText('Line Follow active',{exact:true})).toBeVisible();
-  await expect(p.getByLabel('Line Follow readings')).toContainText('CENTER');
+  await expect(p.getByLabel('Line Follow readings')).toContainText('STRAIGHT');
   const n=await stopped();
   if(event==='space')await p.keyboard.press('Space');
   if(event==='button')await p.getByRole('button',{name:/STOP ROBOT/}).click();

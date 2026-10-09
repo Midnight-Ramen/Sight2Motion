@@ -10,7 +10,7 @@ export interface FinchStatus {
   message: string;
 }
 export class FinchAdapter implements RobotAdapter {
-  readonly sensors = new SensorProvider((sensor, signal) => this.readSensor(sensor, signal));
+  readonly sensors = new SensorProvider((sensor, signal) => this.readSensor(sensor, signal), active => this.transport.setLineSampling(active));
   async readSensor(sensor: SensorDescriptor, signal: AbortSignal) {
     if (!this.connected || !isFinchSensor(sensor.type)) return null;
     if (sensor.type === 'finchOrientation') {
