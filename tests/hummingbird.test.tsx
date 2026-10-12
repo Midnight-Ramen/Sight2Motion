@@ -23,9 +23,9 @@ async function setup() {
 const rotationRule = (port: number): Rule => ({ ...makeRule(), minDuration: 0,
   actions: [{ ...makeAction('rotationServo'), port, speed: 25, mode: 'continuous' }] });
 
-it('has only real robot choices and keeps Finch capabilities unchanged', () => {
+it('has only real robot choices and includes Finch driving reactions', () => {
   expect(Object.keys(ROBOTS)).toEqual(['finch', 'hummingbird']);
-  expect(ROBOTS.finch.actions).toEqual(['beak', 'tail', 'tailLightSequence', 'move', 'wait', 'stop']);
+  expect(ROBOTS.finch.actions).toEqual(['beak', 'tail', 'tailLightSequence', 'move', 'wait', 'stop', 'slowDown', 'setSpeed', 'veerLeft', 'veerRight', 'resumeBase']);
   expect(ROBOTS.hummingbird.actions).toEqual(['singleLed', 'triLed', 'positionServo', 'rotationServo', 'stop', 'wait']);
   expect(readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')).not.toMatch(/MockRobot|Mock Finch|FinchView/);
   expect(readFileSync(new URL('../src/core/RobotAdapter.ts', import.meta.url), 'utf8')).not.toContain('class Mock');

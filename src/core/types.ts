@@ -22,7 +22,8 @@ export interface ClassificationResult {
 export type VisionResult = Detection | ClassificationResult;
 export const hasBoundingBox = (result: VisionResult): result is Detection => 'x' in result;
 export type VisionProviderKind = 'yolo' | 'teachable-machine';
-export type ActionKind = 'beak' | 'tail' | 'tailLightSequence' | 'move' | 'sound' | 'wait' | 'stop' | 'singleLed' | 'triLed' | 'positionServo' | 'rotationServo';
+export type DrivingReactionKind = 'slowDown' | 'setSpeed' | 'veerLeft' | 'veerRight' | 'resumeBase';
+export type ActionKind = DrivingReactionKind | 'beak' | 'tail' | 'tailLightSequence' | 'move' | 'sound' | 'wait' | 'stop' | 'singleLed' | 'triLed' | 'positionServo' | 'rotationServo';
 export type RobotType = 'finch' | 'hummingbird';
 export type MotionMode = 'timed' | 'continuous' | 'follow';
 export interface Action {
@@ -94,6 +95,11 @@ export interface Project {
   selectedClasses: string[];
 }
 export const actionDefinitions: Record<ActionKind, { label: string; description: string }> = {
+  slowDown: { label: 'Slow Down', description: 'Reduce base speed while the condition is true' },
+  setSpeed: { label: 'Set Speed', description: 'Temporarily override base speed' },
+  veerLeft: { label: 'Steer Left', description: 'Gently steer left while moving forward' },
+  veerRight: { label: 'Steer Right', description: 'Gently steer right while moving forward' },
+  resumeBase: { label: 'Resume Base', description: 'Return control to the armed base behavior' },
   beak: { label: 'Beak light', description: 'Give your Finch a colorful beak' },
   tailLightSequence: { label: 'Tail light sequence', description: 'Animate selected tail lights in order' },
   tail: { label: 'Tail lights', description: 'Light up all four tail LEDs' },
@@ -118,7 +124,7 @@ export const makeAction = (kind: ActionKind = 'beak'): Action => ({
   tailLights: kind === 'tail' ? [] : [1, 2, 3, 4],
   ...(kind === 'tailLightSequence' ? sequenceDefaults() : {}),
   duration: 500,
-  speed: 40,
+  speed: kind === 'slowDown' || kind === 'setSpeed' ? 20 : 40,
   direction: 'forward',
   note: 'C5',
 });

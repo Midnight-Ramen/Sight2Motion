@@ -9,6 +9,7 @@ import { FinchNavigation, freshDistance, freshLines, lineDirection, type LineEve
 import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
 import { BaseBehaviorCoordinator } from '../core/BaseBehaviorCoordinator';
 import { makeAction, makeRule } from '../core/types';
+import { reactionSpeed, startVeer } from '../core/DrivingReactions';
 import { NumericSlider } from './NumericSlider';
 
 export function BaseDrivingControls({ engine, robot, sensors, provider, available, rulesRunning, speed, recording, cancelRef, coordinator, ruleSensors, onActiveChange, onArm }: {
@@ -29,6 +30,7 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
   latest.current = { sensors, available, emergency, emergencyDistance };
   const suspending = useRef(false);
   const cruise = useRef(false);
+  const reactionAbort = useRef<AbortController | null>(null);
   const [controller] = useState<FinchNavigation>(() => new FinchNavigation(engine, robot, () => latest.current.sensors,
     () => latest.current.available && !document.hidden, message => {
       setStatus(message);
@@ -46,11 +48,13 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
   });
   const cancel = () => {
     suspending.current = true;
+    reactionAbort.current?.abort(); reactionAbort.current = null;
+    const wasNavigating = controller.active;
     controller.cancel();
     const wasCruise = cruise.current;
     cruise.current = false;
     suspending.current = false;
-    if (wasCruise) return engine.stop();
+    if (wasCruise || wasNavigating) return engine.stop();
   };
   cancelRef.current = () => { coordinator.disarm(); cancel(); };
   coordinator.safety = emergencySafe;
@@ -78,11 +82,18 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
       safe: () => latest.current.available && !document.hidden && emergencySafe() && ruleSensorsFresh() &&
         (mode !== 'Line Follow' || !!freshLines(latest.current.sensors, performance.now())) &&
         (mode !== 'Keep Distance' || (!!encoderPair(latest.current.sensors, performance.now()) && freshDistance(latest.current.sensors, performance.now()) !== null)),
-      start: async () => {
-        if (mode === 'Line Follow') return controller.lineFollow(baseSpeed, lineEvent, true);
-        if (mode === 'Keep Distance') return controller.keepDistance(target, tolerance, baseSpeed);
+      start: async override => {
+        const speed = reactionSpeed(baseSpeed, override);
+        if (override?.kind === 'veerLeft' || override?.kind === 'veerRight') {
+          const abort = new AbortController(); reactionAbort.current = abort; cruise.current = true;
+          const ok = await startVeer(engine, robot, speed, override.kind, abort.signal);
+          setStatus(`${override.kind === 'veerLeft' ? 'Steer Left' : 'Steer Right'} active`);
+          return ok;
+        }
+        if (mode === 'Line Follow') return controller.lineFollow(speed, lineEvent, true);
+        if (mode === 'Keep Distance') return controller.keepDistance(target, tolerance, speed);
         if (mode !== 'Cruise Forward') return false;
-        const rule = { ...makeRule(), id: `base-cruise-${crypto.randomUUID()}`, actions: [{ ...makeAction('move'), mode: 'continuous' as const, speed: baseSpeed }] };
+        const rule = { ...makeRule(), id: `base-cruise-${crypto.randomUUID()}`, actions: [{ ...makeAction('move'), mode: 'continuous' as const, speed }] };
         cruise.current = true;
         const ok = await engine.updateRules([rule], [rule]); setStatus('Cruise Forward active'); return ok;
       },

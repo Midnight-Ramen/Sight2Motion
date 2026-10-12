@@ -1,6 +1,6 @@
 import { makeAction, type Action, type ActionKind, type RobotType, type Rule } from './types';
 export const ROBOTS: Record<RobotType, { name: string; actions: ActionKind[] }> = {
-  finch: { name: 'Finch 2', actions: ['beak', 'tail', 'tailLightSequence', 'move', 'wait', 'stop'] },
+  finch: { name: 'Finch 2', actions: ['beak', 'tail', 'tailLightSequence', 'move', 'wait', 'stop', 'slowDown', 'setSpeed', 'veerLeft', 'veerRight', 'resumeBase'] },
   hummingbird: { name: 'Hummingbird Bit', actions: ['singleLed', 'triLed', 'positionServo', 'rotationServo', 'stop', 'wait'] },
 };
 export const portsFor = (kind: ActionKind): number[] =>

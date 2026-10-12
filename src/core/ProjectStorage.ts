@@ -83,6 +83,9 @@ export function parseProject(text: string): Project {
         ids.has(a.id) ||
         !Object.hasOwn(actionDefinitions, String(a.kind)) ||
         typeof a.enabled !== 'boolean' ||
+        (['slowDown', 'setSpeed', 'veerLeft', 'veerRight', 'resumeBase'].includes(String(a.kind)) && p.robotType !== 'finch') ||
+        (a.kind === 'slowDown' && !number(a.speed, 1, 100)) ||
+        (a.kind === 'setSpeed' && !number(a.speed, 1, 100)) ||
         (['singleLed', 'triLed', 'positionServo', 'rotationServo'].includes(String(a.kind)) &&
           (!Number.isInteger(a.port) || !number(a.port, 1, a.kind === 'singleLed' ? 3 : a.kind === 'triLed' ? 2 : 4))) ||
         (a.kind === 'singleLed' && !number(a.brightness, 0, 100)) ||

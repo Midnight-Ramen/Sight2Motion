@@ -18,6 +18,7 @@ import { SensorConditions } from './SensorConditions';
 import type { SensorDescriptor } from '../core/Sensors';
 import { FOLLOW_DEFAULTS } from '../core/FollowController';
 import { portsFor } from '../core/RobotCapabilities';
+import { isDrivingReaction } from '../core/DrivingReactions';
 import { classificationRule, compatibleRule, YOLO_CAPABILITIES, type VisionCapabilities } from '../core/VisionCapabilities';
 export function RuleCard({
   rule,
@@ -258,18 +259,30 @@ export function RuleCard({
               <div className="action-fields">
                 <select
                   aria-label={`Action ${i + 1} type`}
-                  value={capabilities.includes(a.kind) ? a.kind : ''}
-                  onChange={(e) => updateAction(a.id, { ...makeAction(e.target.value as ActionKind), id: a.id, enabled: a.enabled })}
+                  value={capabilities.includes(a.kind) ? a.kind === 'move' && a.mode === 'timed' && ['left', 'right'].includes(a.direction) ? `turn-${a.direction}` : a.kind : ''}
+                  onChange={(e) => { const turn = e.target.value.startsWith('turn-'); updateAction(a.id, { ...makeAction(turn ? 'move' : e.target.value as ActionKind), ...(turn ? { direction: e.target.value === 'turn-left' ? 'left' as const : 'right' as const } : {}), id: a.id, enabled: a.enabled }); }}
                 >
                   {!capabilities.includes(a.kind) && <option value="" disabled>Choose an action</option>}
-                  {capabilities.map((kind) => (
+                  {capabilities.includes('move') && <optgroup label="Driving">
+                    {(['stop', 'slowDown', 'setSpeed', 'veerLeft', 'veerRight'] as ActionKind[]).filter(kind => capabilities.includes(kind)).map(kind => <option key={kind} value={kind}>{kind === 'stop' ? 'Stop' : actionDefinitions[kind].label}</option>)}
+                    <option value="turn-left">Turn Left</option><option value="turn-right">Turn Right</option>
+                    {capabilities.includes('resumeBase') && <option value="resumeBase">Resume Base</option>}
+                    <option value="move">Move</option>
+                  </optgroup>}
+                  <optgroup label="Signals">
+                  {capabilities.filter(kind => !capabilities.includes('move') || (kind !== 'move' && kind !== 'stop' && !isDrivingReaction({ ...a, kind }))).map((kind) => (
                     <option key={kind} value={kind}>
                       {kind === 'stop' && capabilities.includes('rotationServo') ? 'Stop outputs' : actionDefinitions[kind].label}
                     </option>
                   ))}
+                  </optgroup>
                 </select>
                 {!capabilities.includes(a.kind) && <small role="status">Not available for {robotName}</small>}
                 {capabilities.includes(a.kind) && <>
+                {(a.kind === 'slowDown' || a.kind === 'setSpeed') && <label>Speed %
+                  <NumericSlider aria-label={`Action ${i + 1} speed`} min={1} max={100} value={a.speed}
+                    onChange={e => updateAction(a.id, { speed: Math.max(1, Math.min(100, +e.target.value)) })} />
+                </label>}
                 {portsFor(a.kind).length > 0 && <label>Port
                   <select aria-label={`Action ${i + 1} port`} value={a.port ?? 1} onChange={e => updateAction(a.id, { port: +e.target.value })}>
                     {portsFor(a.kind).map(port => <option key={port} value={port}>{port}</option>)}
