@@ -8,13 +8,14 @@ await p.route('http://127.0.0.1:30061/**',r=>{
 const stopped=()=>paths.filter(x=>x.includes('/stopall/')).length;
 try{
  await p.goto('http://127.0.0.1:5174');
+
  await p.getByRole('button',{name:'Your robot',exact:true}).click();
  await p.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
- await p.getByRole('button',{name:'+ Add behavior',exact:true}).click();await p.getByLabel('Add behavior',{exact:true}).selectOption('Keep Distance');
- const start=p.getByRole('button',{name:'Start Keep Distance',exact:true});
+ await p.getByLabel('Base driving behavior',{exact:true}).selectOption('Keep Distance');
+ const start=p.getByRole('button',{name:'Start base behavior',exact:true});
  await expect(start).toBeEnabled();
- await p.getByRole('spinbutton',{name:'Keep Distance speed',exact:true}).fill('25');
- await expect(p.getByRole('slider',{name:'Keep Distance speed slider',exact:true})).toHaveValue('25');
+ await p.getByRole('spinbutton',{name:'Base driving speed',exact:true}).fill('25');
+ await expect(p.getByRole('slider',{name:'Base driving speed slider',exact:true})).toHaveValue('25');
  for(const event of ['space','button','blur','hidden','stale','manual','disconnect']){
   distance=100;available=true;await expect(start).toBeEnabled();
   await start.click();await expect(p.getByText('Keep Distance active',{exact:true})).toBeVisible();

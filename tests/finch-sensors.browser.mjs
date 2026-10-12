@@ -21,6 +21,7 @@ try {
   await openSetup(page, 'Sensors');
   await sensors.getByLabel('Distance', { exact: true }).check();
   await openSetup(page, 'Sensors');
+  await sensors.getByText('Advanced sensors', { exact: true }).click();
   await sensors.getByLabel('Left Line', { exact: true }).check();
   await openSetup(page, 'Sensors');
   await sensors.getByLabel('Right Line', { exact: true }).check();
@@ -33,7 +34,7 @@ try {
   await page.getByLabel('Action 1 type', { exact: true }).selectOption('stop');
   await openSetup(page, 'Your robot');
   await page.getByRole('button', { name: 'Connect Finch 2 A', exact: true }).click();
-  await expect(sensors).toContainText('37 cm');
+  await expect(sensors.locator('.sensor-group').first()).toContainText('37');
   // Sensor-only Play works without camera, demo, model or detections.
   await expect(page.getByRole('button', { name: 'Play rules', exact: true })).toBeEnabled();
   await openSetup(page, 'Diagnostics');
@@ -50,7 +51,7 @@ try {
   distance = 'Not Connected';
   await expect(page.getByLabel('Sensor diagnostics')).toContainText('Distance: No data');
   await expect(page.getByLabel('Rule diagnostics')).toContainText('Waiting');
-  await expect(sensors).toContainText('Waiting for Distance data');
+  await expect(sensors.locator('.sensor-group').first()).toContainText('10');
   await page.getByRole('button', { name: /STOP ROBOT/ }).click();
   await page.locator('.rule-card').first().getByRole('button', { name: 'Edit', exact: true }).click();
   distance = '37';

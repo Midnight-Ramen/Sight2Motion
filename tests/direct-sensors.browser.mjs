@@ -1,0 +1,48 @@
+import { chromium, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+let distance = '37';
+await page.route('http://127.0.0.1:30061/**', route => {
+  const path = new URL(route.request().url()).pathname;
+  return route.fulfill({ body: path.includes('/Distance/') ? distance : path.includes('/Light/Left/') ? '20' : path.includes('/Light/Right/') ? '60' : path.includes('/Encoder/Left/') ? '-3' : path.includes('/Encoder/Right/') ? '1' : path.includes('/Line/') ? '15' : path.includes('/in/') ? 'true' : '200' });
+});
+try {
+  await page.goto('http://127.0.0.1:5174');
+  await page.getByLabel('Condition source').selectOption('sensor');
+  await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
+  const input = page.getByLabel('Sensor condition 1 input');
+  for (const label of ['Distance', 'Line', 'Light level', 'Orientation', 'Wheel movement']) await expect(input).toContainText(label);
+  await expect(input.locator('optgroup')).toHaveAttribute('label', 'Advanced sensors');
+  await input.selectOption('finchLine');
+  await page.getByLabel('Sensor condition 1 value').fill('40');
+  await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
+  await page.getByLabel('Sensor condition 2 input').selectOption('finchLightLevel');
+  await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
+  await page.getByLabel('Sensor condition 3 input').selectOption('finchWheelMovement');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save project', exact: true }).click();
+  const project = JSON.parse(await readFile(await (await download).path(), 'utf8'));
+  expect(project.rules[0].sensorConditions.filter(c => c.sensorId.startsWith('finchLine')).map(c => [c.sensorId, c.operator, c.value])).toEqual([['finchLineLeft', 'lessThan', 40], ['finchLineRight', 'lessThan', 40]]);
+  expect(project.sensorConfiguration.map(s => s.id)).toEqual(expect.arrayContaining(['finchLineLeft', 'finchLineRight', 'finchLightLevel', 'finchWheelMovement']));
+  await page.locator('input[type="file"][accept=".json,application/json"]').setInputFiles({ name: 'grouped.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+  await expect(page.getByLabel('Sensor condition 1 input')).toHaveValue('finchLine');
+  await expect(page.getByLabel('Sensor condition 2 input')).toHaveValue('finchLightLevel');
+  await page.getByRole('button', { name: '+ Add sensor condition', exact: true }).click();
+  await page.getByLabel('Sensor condition 4 input').selectOption('finchDistance');
+  await page.getByRole('button', { name: 'Your robot', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect Finch 2 A', exact: true }).click();
+  await page.getByRole('button', { name: 'Sensors', exact: true }).click();
+  const group = name => page.locator('.sensor-group').filter({ has: page.getByRole('checkbox', { name, exact: true, includeHidden: true }) }).locator('span');
+  await expect(group('Light level')).toHaveText('40');
+  await expect(group('Wheel movement')).toHaveText('2');
+  await expect(group('Distance')).toHaveText('37');
+  distance = 'Not Connected';
+  await page.waitForTimeout(1300); await expect(group('Distance')).toHaveText('37');
+  expect(await page.locator('.sensor-group > span').allTextContents()).not.toEqual(expect.arrayContaining([expect.stringMatching(/Waiting|Reading|Currently/)]));
+  await page.getByRole('button', { name: 'Your robot', exact: true }).click();
+  await page.getByRole('button', { name: 'Disconnect from app', exact: true }).click();
+  await expect(group('Distance')).toHaveText('—');
+  await expect(group('Light level')).toHaveText('—');
+  console.log('Immediate supported sensors, grouped Line AND, derived average rules, save/import, numeric retention and disconnect clearing passed.');
+} finally { await browser.close(); }

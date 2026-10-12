@@ -33,13 +33,13 @@ it('TM requires loaded classes and rejects unavailable rule classes', () => {
   expect(setupReadiness(project, { ...ready, classes: [] })).toMatchObject({ vision: false, rules: false, play: false });
   expect(setupReadiness(project, { ...ready, classes: ['cup'] }).rules).toBe(false);
 });
-it('missing Hummingbird output or sensor ports keep Rules incomplete', () => {
+it('Hummingbird output ports remain required; supported rule sensor ports auto-register', () => {
   const p = { ...makeProject(), robotType: 'hummingbird' as const };
   p.rules[0].actions = [{ ...makeAction('positionServo'), port: undefined }];
   expect(setupReadiness(p, ready)).toMatchObject({ rules: false, helper: 'Next: Select the Hummingbird output port in your rule.' });
   p.rules[0].actions[0].port = 2;
   p.rules[0].sensorConditions = [{ id: 's', sensorId: 'distance:2', operator: 'lessThan', value: 30 }];
-  expect(setupReadiness(p, ready).rules).toBe(false);
+  expect(setupReadiness(p, ready).rules).toBe(true);
 });
 it('valid enabled rules complete Rules, disabled rules do not', () => {
   const p = makeProject();

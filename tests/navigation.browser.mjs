@@ -12,6 +12,7 @@ await p.addInitScript(()=>{
 const stopped=()=>p.evaluate(()=>window.hardware.paths.filter(x=>x.includes('/stopall/')).length);
 try{
  await p.goto('http://127.0.0.1:5174');await p.getByRole('button',{name:'Your robot',exact:true}).click();await p.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
+ await p.getByText('Navigation & safety',{exact:true}).click();
  const forward=p.getByRole('button',{name:'Forward',exact:true});await expect(forward).toBeEnabled();
  await expect(p.getByText('Turn calibration required',{exact:true})).toHaveCount(0);await expect(p.getByRole('button',{name:'Turn Left',exact:true})).toBeEnabled();
 

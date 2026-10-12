@@ -215,7 +215,7 @@ button.primary:hover, .camera-empty .primary:hover { background: #96285c; border
   .summary-icons { display: none; }
 }
 .rule-heading { height: auto; min-height: 48px; }
-.rules-section > .section-heading { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
+#rules-workspace > .section-heading { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
 .rules-controls { display: flex; flex-wrap: wrap; gap: 8px; }
 .rules-controls button { padding: 9px 12px; }
 .rule-card > div > p[role=status] { margin: 12px 16px; color: var(--accent); }
@@ -270,7 +270,7 @@ main { padding-top: 12px; }
 .project-objects { padding: 12px; }
 .project-objects h3 { margin: 0 0 8px; font-size: 13px; }
 .rules-section { padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 12px; }
-.rules-section > .section-heading { gap: 6px; margin-bottom: 8px; }
+#rules-workspace > .section-heading { gap: 6px; margin-bottom: 8px; }
 .rules-section .section-heading h2 { font-size: 17px; margin: 0; }
 .rules-section .section-heading p { font-size: 11px; margin: 5px 0; }
 .rules-controls button { font-size: 12px; padding: 7px 10px; min-height: 32px; }
@@ -337,7 +337,7 @@ main { padding-top: 12px; }
   .studio-grid { flex: 1 1 auto; min-height: 0; grid-template-columns: minmax(0, 36fr) minmax(0, 64fr); align-items: stretch; overflow: hidden; }
   .vision-column { min-height: 0; overflow-y: auto; overflow-x: hidden; align-content: start; padding-right: 4px; scrollbar-gutter: stable; }
   .studio-grid > .rules-section { min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; background: radial-gradient(var(--line) .7px, transparent .8px) 0 0 / 16px 16px, var(--surface-soft); }
-  .rules-section > .section-heading { position: sticky; top: -12px; z-index: 5; background: var(--surface-soft); padding: 10px 0; }
+  #rules-workspace > .section-heading { position: sticky; top: 40px; z-index: 5; background: var(--surface-soft); padding: 10px 0; }
   .app-shell > .safety-bar { position: static; flex: 0 0 auto; width: 100%; }
   .workspace-secondary .log-lines { max-height: none; }
 }
@@ -377,7 +377,7 @@ main { padding-top: 12px; }
 .topbar .title-line .save-status { font-size: 10px; }
 .topbar .project-buttons { gap: 5px; }
 .topbar .project-buttons button, .topbar .more-menu summary { padding: 4px 8px; min-height: 28px; font-size: 11px; }
-.rules-section > .section-heading { flex-direction: row; align-items: start; justify-content: space-between; padding: 4px 0; margin-bottom: 4px; }
+#rules-workspace > .section-heading { flex-direction: row; align-items: start; justify-content: space-between; padding: 4px 0; margin-bottom: 4px; }
 .rules-subtitle { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; }
 .rules-section .rules-subtitle p { margin: 0; }
 .rules-section #play-blocker { margin: 0 0 10px; }
@@ -403,10 +403,10 @@ main { padding-top: 12px; }
  .safety-bar > div { display: none; }
  .safety-bar > .primary, .safety-bar > .stop-button { min-width: 0; flex: 1; font-size: 12px; }
  .safety-bar kbd { display: none; }
- .rules-section > .section-heading { flex-wrap: wrap; }
+ #rules-workspace > .section-heading { flex-wrap: wrap; }
 }
 /* Compact rule heading and consistent action parameter columns. */
-.rules-section > .section-heading { padding: 0; margin: 0 0 4px; align-items: center; }
+#rules-workspace > .section-heading { padding: 0; margin: 0 0 4px; align-items: center; }
 .rules-section .rules-status { font-weight: 400; padding: 2px 6px; border-radius: 4px; background: var(--surface-soft); }
 .rules-section #play-blocker { min-height: 0; margin: 0 0 8px; font-size: 11px; line-height: 1.4; }
 .rule-body .action-card { grid-template-columns: 12px 30px minmax(0, 1fr); align-items: start; }
@@ -495,3 +495,22 @@ label.mirror-control input { margin: 0; width: auto; }
 
 .road-sign-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; width:100%; }
 .road-sign-row select { flex:1 1 100px; min-width:0; max-width:100%; }
+
+.navigation-controls > small { display: block; color: var(--muted); font-size: 11px; }
+.sensor-inputs .sensor-group { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.sensor-inputs .sensor-group label { justify-content: flex-start; }
+.sensor-group > span { color: var(--muted); text-align: right; font-size: 11px; }
+.advanced-sensors { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.advanced-sensors summary { cursor: pointer; font-size: 12px; }
+/* One primary workspace, with compact base settings above ordinary rules. */
+.base-driving { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.base-heading label, .base-settings label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.base-heading select { min-width: 140px; }
+.base-settings { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+.base-settings .numeric-slider { width: 200px; max-width: 100%; }
+.base-settings input[type=number] { width: 58px; }
+.base-driving > small { display: block; color: var(--muted); font-size: 11px; }
+.driving-tools { margin-top: 8px; font-size: 12px; }
+.driving-tools summary { cursor: pointer; color: var(--muted); }
+#rules-workspace > .section-heading { position: static; }
+@media (max-width: 600px) { .base-settings > label { width: 100%; } }

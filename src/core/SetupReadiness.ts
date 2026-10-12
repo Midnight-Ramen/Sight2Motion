@@ -1,3 +1,4 @@
+import { isDerivedSensor, registerRuleSensors } from './RuleSensors';
 import { ruleNeedsVision, ruleSource, type Project, type Rule } from './types';
 import { isFinchSensor } from './Sensors';
 import { parseProject } from './ProjectStorage';
@@ -15,6 +16,7 @@ export interface SetupState {
   trackedName?: string;
 }
 export function setupReadiness(project: Project, state: SetupState) {
+  project = registerRuleSensors(project);
   const robot = Object.hasOwn(ROBOTS, project.robotType);
   const enabled = project.rules.filter(rule => rule.enabled);
   const needsVision = !enabled.length || enabled.some(ruleNeedsVision);
@@ -35,7 +37,7 @@ export function setupReadiness(project: Project, state: SetupState) {
     if (ruleSource(rule) !== 'vision' && !rule.sensorConditions?.length) return 'Next: Add a sensor condition.';
     for (const condition of ruleSource(rule) === 'vision' ? [] : rule.sensorConditions ?? []) {
       const sensor = project.sensorConfiguration?.find(sensor => sensor.id === condition.sensorId);
-      if (!sensor || (project.robotType === 'finch' ? !isFinchSensor(sensor.type) : isFinchSensor(sensor.type) || ![1, 2, 3].includes(sensor.port!)))
+      if (!sensor || (project.robotType === 'finch' ? (!isFinchSensor(sensor.type) && !isDerivedSensor(sensor.id)) : isFinchSensor(sensor.type) || ![1, 2, 3].includes(sensor.port!)))
         return project.robotType === 'finch' ? 'Next: Configure the Finch sensor for your rule.' : 'Next: Configure the sensor port for your rule.';
     }
     try { parseProject(JSON.stringify({ ...project, rules: [{ ...rule, actions }] })); }

@@ -1,3 +1,4 @@
+import { DERIVED_SENSORS, isDerivedSensor } from './RuleSensors';
 import { actionDefinitions, validTailSequence, ruleNeedsVision, type Action, type Project } from './types';
 import { normalizeTeachableMachineUrl } from './TeachableMachineUrl';
 import { FOLLOW_DEFAULTS } from './FollowController';
@@ -34,8 +35,10 @@ export function parseProject(text: string): Project {
     throw new Error('Choose a valid Robot Studio project.');
   const ids = new Set<string>();
   const configuration = p.sensorConfiguration ?? [];
-  if (!Array.isArray(configuration) || configuration.length > (p.robotType === 'hummingbird' ? 3 : 8) ||
-    configuration.some(s => !obj(s) || (isFinchSensor(String(s.type))
+  if (!Array.isArray(configuration) || configuration.length > (p.robotType === 'hummingbird' ? 3 : 10) ||
+    configuration.some(s => !obj(s) || (isDerivedSensor(String(s.id))
+      ? p.robotType !== 'finch' || s.type !== DERIVED_SENSORS[s.id as keyof typeof DERIVED_SENSORS].type || s.port !== undefined
+      : isFinchSensor(String(s.type))
       ? p.robotType !== 'finch' || s.id !== s.type || s.port !== undefined
       : p.robotType !== 'hummingbird' || !Object.hasOwn(SENSOR_TYPES, String(s.type)) ||
         !Number.isInteger(s.port) || !number(s.port, 1, 3) || s.id !== `${s.type}:${s.port}`)) ||
@@ -68,7 +71,7 @@ export function parseProject(text: string): Project {
     ids.add(r.id);
     const conditions = r.sensorConditions ?? [];
     if (!Array.isArray(conditions) || conditions.length > 10 || conditions.some(c => !obj(c) ||
-      typeof c.id !== 'string' || typeof c.sensorId !== 'string' || !(/^(distance|light|sound|analog|digital):[1-3]$/.test(c.sensorId) || isFinchSensor(c.sensorId)) ||
+      typeof c.id !== 'string' || typeof c.sensorId !== 'string' || !(/^(distance|light|sound|analog|digital):[1-3]$/.test(c.sensorId) || isFinchSensor(c.sensorId) || (p.robotType === 'finch' && isDerivedSensor(c.sensorId))) ||
       !Object.hasOwn(SENSOR_OPERATORS, String(c.operator)) ||
       !(c.sensorId === 'finchOrientation' ? c.operator === 'equals' && FINCH_ORIENTATIONS.includes(c.value as typeof FINCH_ORIENTATIONS[number]) : typeof c.value === 'boolean' ? c.operator === 'equals' : number(c.value, -10000, 10000))) ||
       new Set(conditions.map(c => c.id)).size !== conditions.length)
@@ -127,7 +130,7 @@ export function parseProject(text: string): Project {
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
     customObjects: [...new Set((valid.customObjects ?? []).map(n => n.trim()))],
-    sensorConfiguration: configuration.map(s => isFinchSensor(s.type) ? finchSensorDescriptor(s.type) : sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
+    sensorConfiguration: configuration.map(s => isDerivedSensor(s.id) ? { ...DERIVED_SENSORS[s.id as keyof typeof DERIVED_SENSORS] } : isFinchSensor(s.type) ? finchSensorDescriptor(s.type) : sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
     id: valid.id,
     name: valid.name,
     robotType: String(valid.robotType) === 'mock-finch' ? 'finch' : valid.robotType,

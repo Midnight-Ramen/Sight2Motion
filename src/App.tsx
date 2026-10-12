@@ -1,3 +1,5 @@
+import { BaseBehaviorCoordinator } from './core/BaseBehaviorCoordinator';
+import { registerRuleSensors, supportedRuleSensors, pollingSensors, derivedSensorState } from './core/RuleSensors';
 import { ManualDrive } from './components/ManualDrive';
 import { SetupSection } from './components/SetupSection';
 import { cameraFailure, modelGuidance, detectionEmpty } from './core/StudentGuidance';
@@ -17,7 +19,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  BookOpen,
   Camera,
   Check,
   ChevronDown,
@@ -27,7 +28,6 @@ import {
   Eye,
   FilePlus2,
   FolderOpen,
-  Leaf,
   LoaderCircle,
   Plus,
   Play,
@@ -54,7 +54,6 @@ import {
   makeAction,
   makeProject,
   makeRule,
-  type Detection,
   type VisionResult,
   type VisionProviderKind,
   hasBoundingBox,
@@ -82,17 +81,8 @@ const networkCameras = [1, 2, 3, 4].map(number => ({
   url: `http://robosight-cam-${String(number).padStart(2, '0')}.local/stream`,
 }));
 const defaultNetworkCameraUrl = networkCameras[0].url;
-const demoDetection: Detection = {
-  className: 'person',
-  confidence: 0.94,
-  x: 410,
-  y: 70,
-  width: 350,
-  height: 580,
-  centerX: 585,
-  centerY: 360,
-};
 export default function App() {
+  const [navigationContainer, setNavigationContainer] = useState<HTMLDivElement | null>(null);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   useEffect(() => {
@@ -149,6 +139,9 @@ export default function App() {
         setAi(false);
       }),
   );
+  const [baseCoordinator] = useState(() => new BaseBehaviorCoordinator(actions));
+  useEffect(() => { if (!ai) baseCoordinator.disarm(); }, [ai, baseCoordinator]);
+  const [sensorDisplayRevision, setSensorDisplayRevision] = useState(0);
   const [rules] = useState(() => new RuleEngine());
   const [camera] = useState(() => new CameraManager());
   const [vision] = useState(() => new VisionSession());
@@ -174,16 +167,13 @@ export default function App() {
   const [modelReady, setModelReady] = useState(false),
     [modelBusy, setModelBusy] = useState(false),
     [backend, setBackend] = useState('Not loaded');
-  const [demo, setDemo] = useState(false),
-    [demoVisible, setDemoVisible] = useState(true);
   const [detections, setDetections] = useState<VisionResult[]>([]),
     [measuredFps, setMeasuredFps] = useState(0);
   const [notice, setNotice] = useState(''),
     [showLog, setShowLog] = useState(true),
     [help, setHelp] = useState(false),
     [saved, setSaved] = useState<Project[] | null>(null);
-  const [lastRule, setLastRule] = useState(''),
-    [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const video = useRef<HTMLVideoElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
     modelInput = useRef<HTMLInputElement>(null),
@@ -247,24 +237,23 @@ export default function App() {
   }, [camera, cameraOn, cameraSource, cameraBusy]);
   const readiness = setupReadiness(project, {
     usableFrame: cameraOn && usableFrame, modelReady, classes: availableClasses,
-    connected, hardwareBusy, running: ai, demo,
+    connected, hardwareBusy, running: ai, demo: false,
     trackedName: customTracked?.state === 'TRACKING' ? customTracked.displayName : undefined,
   });
-  const setupGuidance = cameraBusy ? 'Camera connecting. Wait for the preview to appear.' :
-    cameraError || (cameraOn && !usableFrame ? 'Camera frames are unavailable. Reconnect your camera.' : readiness.helper);
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
-    setProject(p);
+    setProject(registerRuleSensors(p));
     setDirty(true);
     rules.reset();
   };
   const pause = useCallback(() => {
+    baseCoordinator.disarm();
     setManualStopRevision(value => value + 1);
     aiRef.current = false;
     setAi(false);
     rules.reset();
     void actions.stop();
-  }, [actions, rules]);
+  }, [actions, rules, baseCoordinator]);
   useEffect(() => {
     if (!connected) pause();
   }, [connected, pause]);
@@ -320,17 +309,16 @@ export default function App() {
       const selectedSafety = !aiRef.current && actions.followingSelectedTarget;
       const evaluatedRules = selectedSafety ? p.rules.filter(r => ruleSource(r) !== 'vision' && r.actions.some(a => a.enabled && a.kind === 'stop')) : p.rules;
       const triggered = rules.evaluate(evaluatedRules, items, performance.now(), capabilitiesFor(p.visionProvider),
-        { state: sensorRef.current, configuration: p.sensorConfiguration ?? [], available: robot.connected });
+        { state: sensorRef.current, configuration: registerRuleSensors(p).sensorConfiguration ?? [], available: robot.connected });
       if (selectedSafety && !rules.activeRules.length && !triggered.length) return;
       const wasBusy = actions.busy;
-      void actions.updateRules(triggered, rules.activeRules, { detections: items, capturedAt, width: camera.width || (demo ? 1280 : 0), height: camera.height || (demo ? 720 : 0) });
+      void baseCoordinator.update(triggered, rules.activeRules, { detections: items, capturedAt, width: camera.width || (0), height: camera.height || (0) });
       if (wasBusy) return;
       if (triggered.length) {
         triggered.forEach((r) => log(`Running “${r.name}”`));
-        setLastRule(triggered.map((r) => r.name).join(', '));
       }
     },
-    [actions, robot, rules, log, hummingbird, camera, demo],
+    [actions, robot, rules, log, hummingbird, camera, baseCoordinator],
   );
   const consume = useCallback((items: VisionResult[], capturedAt = performance.now()) => {
     setDetections(items);
@@ -341,20 +329,21 @@ export default function App() {
     sensorRef.current = {};
     setSensorState({});
     if (!connected) return;
-    const inputs = [...(project.sensorConfiguration ?? [])];
+    const inputs = pollingSensors(registerRuleSensors(project).sensorConfiguration ?? []);
     if (robotMode === 'finch') for (const type of ['finchEncoderLeft', 'finchEncoderRight', 'finchDistance', 'finchLineLeft', 'finchLineRight'] as const) {
       if (!inputs.some(sensor => sensor.id === type)) inputs.push(finchSensorDescriptor(type));
     }
     if (!inputs.length) return;
     const provider = robotMode === 'finch' ? finch.sensors : hummingbird.sensors;
     provider.start(inputs, state => {
-      sensorRef.current = state;
-      setSensorState(state);
+      const derived = derivedSensorState(state);
+      sensorRef.current = derived;
+      setSensorState(derived);
     });
     // Evaluate sensor loss even if inference is slow or a sensor request stalls.
     const timer = setInterval(() => {
       setSensorState({ ...sensorRef.current });
-      if (!projectRef.current.rules.some(r => r.sensorConditions?.length)) return;
+      if (!baseCoordinator.enabled && !projectRef.current.rules.some(r => r.sensorConditions?.length)) return;
       const vision = latestVision.current;
       evaluateInputs(performance.now() - vision.updatedAt <= 1500 ? vision.items : [], vision.capturedAt);
     }, 100);
@@ -376,10 +365,7 @@ export default function App() {
       try {
         let items: VisionResult[] = [];
         let capturedAt = started;
-        if (demo)
-          items =
-            demoVisible && projectRef.current.vision.confidence <= 0.94 ? [demoDetection] : [];
-        else if (cameraOn && modelReady) {
+        if (cameraOn && modelReady) {
           if (inference.current) await inference.current;
           if (version !== loopVersion.current) return;
           const frame = camera.frame;
@@ -407,23 +393,23 @@ export default function App() {
         }
         if (version !== loopVersion.current) return;
         if (vision.capabilities.boundingBoxes) {
-          const frameWidth = demo ? 1280 : camera.width || 1280;
-          const displayed = orientDetections(items, frameWidth, !demo && (projectRef.current.mirrorHorizontal ?? false));
+          const frameWidth = camera.width || 1280;
+          const displayed = orientDetections(items, frameWidth, (projectRef.current.mirrorHorizontal ?? false));
           items = withDetectionRegions(displayed.filter(hasBoundingBox), frameWidth);
         items = items.filter(hasBoundingBox).map(d => ({ ...d, areaRatio: detectionAreaRatio(d,
-          demo ? 1280 : camera.width || 1280,
-          demo ? 720 : camera.height || 720) }));
+          camera.width || 1280,
+          camera.height || 720) }));
         }
         consume(items, capturedAt);
         const qualifying = items.filter(d => d.confidence >= projectRef.current.vision.confidence);
         const classes = [...new Set(qualifying.map((d) => d.className))].sort().join(',');
         if (classes && classes !== oldClasses)
           log(
-            `${demo ? 'Demo: ' : ''}${qualifying[0].className} detected · ${Math.round(qualifying[0].confidence * 100)}%${qualifying[0].region ? ` · ${qualifying[0].region.toUpperCase()}` : ''}`,
+            `${qualifying[0].className} detected · ${Math.round(qualifying[0].confidence * 100)}%${qualifying[0].region ? ` · ${qualifying[0].region.toUpperCase()}` : ''}`,
           );
         oldClasses = classes;
         setMeasuredFps(
-          demo || (cameraOn && modelReady)
+          (cameraOn && modelReady)
             ? Math.min(
                 projectRef.current.vision.fps,
                 1000 / Math.max(1, performance.now() - started),
@@ -450,12 +436,12 @@ export default function App() {
       ++loopVersion.current;
       clearTimeout(timer);
     };
-  }, [demo, demoVisible, cameraOn, modelReady, consume, vision, pause, log, mirrorHorizontal, actions]);
+  }, [cameraOn, modelReady, consume, vision, pause, log, mirrorHorizontal, actions]);
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
-    c.width = demo ? 1280 : camera.width || 1280;
-    c.height = demo ? 720 : camera.height || 720;
+    c.width = camera.width || 1280;
+    c.height = camera.height || 720;
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
@@ -485,7 +471,7 @@ export default function App() {
       ctx.fillStyle = '#17392c';
       ctx.fillText(text, d.x + 12, d.y - 10);
     }
-  }, [detections, project.vision.visualize, project.rules, demo, visionCapabilities]);
+  }, [detections, project.vision.visualize, project.rules, visionCapabilities]);
   async function connectCamera(source: 'local' | 'network' = cameraSource) {
     if (cameraConnecting.current) return;
     cameraConnecting.current = true;
@@ -493,7 +479,7 @@ export default function App() {
     pause();
     consume([]);
     const attempt = ++cameraAttempt.current;
-    pause(); setDemo(false); setCameraOn(false); setCameraError('');
+    pause(); setCameraOn(false); setCameraError('');
     setCameraBusy(true); setNotice('');
     const ended = () => {
       if (attempt !== cameraAttempt.current) return;
@@ -509,7 +495,7 @@ export default function App() {
       if (source === 'network') {
         await camera.connectNetwork(networkImage.current!, project.networkCameraUrl ?? defaultNetworkCameraUrl, ended, () => {
           if (attempt !== cameraAttempt.current) return;
-          cameraConnecting.current = false; setCameraBusy(false); setCameraError(''); setCameraOn(true);
+          cameraConnecting.current = false; setCameraBusy(false); setCameraError('');setCameraOn(true);
         });
       } else {
         const list = await camera.connect(video.current!, device);
@@ -534,7 +520,7 @@ export default function App() {
     cameraConnecting.current = false;
     ++cameraAttempt.current; ++loopVersion.current;
     camera.stop(); pause(); consume([]);
-    setCameraOn(false); setCameraBusy(false); setCameraError(''); setDemo(false);
+    setCameraOn(false); setCameraBusy(false); setCameraError('');
   }
   function switchCamera(source: 'local' | 'network') {
     disconnectCamera();
@@ -544,7 +530,7 @@ export default function App() {
   }
   function resetModel(kind: VisionProviderKind) {
     pause();
-    setDemo(false);
+
     setModelReady(false);
     setModelBusy(false);
     setModelError(false);
@@ -567,7 +553,7 @@ export default function App() {
   }
   async function loadModel(file?: File, kind: VisionProviderKind = providerKind) {
     pause();
-    setDemo(false);
+
     setModelBusy(true);
     setModelReady(false);
     setModelError(false);
@@ -626,18 +612,8 @@ export default function App() {
     setNotice('');
     log('AI enabled. Your rules are listening.');
   }
-  function startDemo() {
-    disconnectCamera();
-    if (providerKind !== 'yolo') changeProvider('yolo');
-    pause();
-    camera.stop();
-    setCameraOn(false);
-    setDemo(true);
-    setDemoVisible(true);
-    setNotice('Demo mode uses a simulated person detection. No camera or AI model is running.');
-    log('Demo scene ready. Connect your robot, then press Play rules.');
-  }
   async function selectRobot(mode: RobotType, updateProject = true) {
+    baseCoordinator.disarm();
     aiRef.current = false;
     setAi(false);
     rules.reset();
@@ -653,13 +629,13 @@ export default function App() {
       if (updateProject) {
         setProject(current => ({ ...current, robotType: mode, rules: [], sensorConfiguration: [], customObjects: [] }));
         setDirty(true);
-        setLastRule('');
         setNotice('Robot changed. Rules and sensor conditions cleared.');
       }
       setHardwareBusy(false);
     }
   }
   async function attachRobot() {
+    baseCoordinator.disarm();
     aiRef.current = false;
     setAi(false);
     rules.reset();
@@ -685,6 +661,7 @@ export default function App() {
     }
   }
   async function hardwareAction(action: Action) {
+    baseCoordinator.disarm();
     aiRef.current = false;
     setAi(false);
     rules.reset();
@@ -698,6 +675,8 @@ export default function App() {
     }
   }
   async function resetProjectOutputs() {
+    pause();
+    setSensorDisplayRevision(value => value + 1);
     aiRef.current = false;
     setAi(false);
     rules.reset();
@@ -706,7 +685,6 @@ export default function App() {
       const ok = connected ? await actions.reset(resetActions(robotMode, project.rules)) : (await actions.stop(), true);
       setProject(current => ({ ...current, rules: [], sensorConfiguration: [], customObjects: [] }));
       setDirty(true);
-      setLastRule('');
       setNotice(ok ? 'Project reset. Rules and sensor conditions cleared.' : 'Rules cleared. Robot output reset could not be confirmed.');
       log('Project reset; rules and sensor configuration cleared.');
     } finally { setHardwareBusy(false); }
@@ -721,9 +699,8 @@ export default function App() {
     if ((p.visionProvider ?? 'yolo') !== providerKind || p.teachableMachineUrl !== project.teachableMachineUrl)
       resetModel(p.visionProvider ?? 'yolo');
     setTmUrlInput(p.teachableMachineUrl ?? '');
-    setProject(p);
+    setProject(registerRuleSensors(p));
     setDirty(false);
-    setLastRule('');
     setSaved(null);
     log(`Opened “${p.name}”`);
   }
@@ -793,12 +770,6 @@ export default function App() {
             {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
             <span>{theme === 'dark' ? 'Dark' : 'Light'}</span><span className="theme-toggle-track" aria-hidden="true"><span /></span>
           </button>
-          <span className="local-badge">
-            <span /> Runs on your device
-          </span>
-          <button className="text-button" onClick={() => setHelp(true)}>
-            <BookOpen size={16} /> Getting started
-          </button>
           <button className="icon-button" aria-label="Help" onClick={() => setHelp(true)}>
             <CircleHelp size={19} />
           </button>
@@ -815,7 +786,6 @@ export default function App() {
                 value={project.name === 'Name Your Project' || project.name === 'My first vision project' ? '' : project.name}
                 onChange={(e) => edit({ ...project, name: e.target.value })}
               />
-              <span className="save-status">{dirty ? 'Unsaved changes' : 'Local project'}</span>
             </div>
           </div>
           <div className="project-buttons">
@@ -900,7 +870,6 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <p className="setup-guidance" role="status">{setupGuidance}</p>
         {notice && (
           <div className="notice" role="status">
             <CircleHelp size={17} />
@@ -919,15 +888,15 @@ export default function App() {
                 Vision preview
               </h2>
               <button className="camera-size-toggle" aria-expanded={cameraExpanded} aria-controls="camera-view" onClick={() => setCameraExpanded(value => !value)}>{cameraExpanded ? 'Collapse camera' : 'Expand camera'}</button>
-              <span className={`status ${cameraOn || demo ? 'active' : ''}`}>
+              <span className={`status ${cameraOn ? 'active' : ''}`}>
                 <i />
-                {demo ? 'Demo scene' : cameraSource === 'network' ? cameraBusy ? 'Connecting' : cameraError ? 'Error' : cameraOn ? 'Connected' : 'Disconnected' : cameraOn ? 'Camera live' : 'Camera off'}
+                {cameraSource === 'network' ? cameraBusy ? 'Connecting' : cameraError ? 'Error' : cameraOn ? 'Connected' : 'Disconnected' : cameraOn ? 'Camera live' : 'Camera off'}
               </span>
             </div>
             <div className="camera-stage" id="camera-view">
-              <video ref={video} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} muted playsInline className={cameraSource === 'local' && cameraOn && !demo ? '' : 'hidden'} />
-              <img ref={networkImage} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn && !demo ? '' : 'hidden'} />
-              {!cameraOn && !demo && (
+              <video ref={video} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} muted playsInline className={cameraSource === 'local' && cameraOn ? '' : 'hidden'} />
+              <img ref={networkImage} style={{ transform: mirrorHorizontal ? 'scaleX(-1)' : undefined }} alt="Network camera live feed" className={cameraSource === 'network' && cameraOn ? '' : 'hidden'} />
+              {!cameraOn && (
                 <div className="camera-empty">
                   <h3>A little vision. A lot of possibility.</h3>
                   <button className="primary" disabled={cameraBusy} onClick={() => void connectCamera()}>
@@ -940,42 +909,23 @@ export default function App() {
                   </button>
                 </div>
               )}
-              {demo && (
-                <div className="demo-scene">
-                  <span className="scene-label">SIMULATED CLASSROOM</span>
-                  <div className="demo-window" />
-                  <div className="demo-shelf" />
-                  <div className="demo-desk" />
-                  {demoVisible && (
-                    <div className="demo-person">
-                      <div className="person-head" />
-                      <div className="person-body" />
-                      <div className="person-arm left" />
-                      <div className="person-arm right" />
-                    </div>
-                  )}
-                  <span className="demo-caption">Sample detection • not a live camera</span>
-                </div>
-              )}
               <canvas ref={canvas} />
-              <ObjectSelection key={[project.id, cameraSource, cameraOn, demo, mirrorHorizontal].join('-')} camera={camera} available={cameraOn && !demo} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.capturedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
+              <ObjectSelection key={[project.id, cameraSource, cameraOn, mirrorHorizontal].join('-')} camera={camera} available={cameraOn} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.capturedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
                 controlsContainer={followContainer}
                 savedNames={project.customObjects} onTracking={setCustomTracked}
                 onSaveName={name => { setProject(current => ({ ...current, customObjects: [...new Set([...(current.customObjects ?? []), name])].slice(0, 10) })); setDirty(true); }} follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
-                  prepare: () => { aiRef.current = false; setAi(false); rules.reset(); } } : undefined} />
-              {(demo || cameraOn) && (
+                  prepare: () => { baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); } } : undefined} />
+              {cameraOn && (
                 <div className="feed-top">
                   <span>
                     <span className="live-dot" />
-                    {demo ? 'DEMO' : 'LIVE'}{' '}
+                    LIVE{' '}
                     <b>
-                      {demo
-                        ? '1280 × 720'
-                        : `${camera.width || 0} × ${camera.height || 0}`}
+                      {`${camera.width || 0} × ${camera.height || 0}`}
                     </b>
                   </span>
                   <button
-                    aria-label="Disconnect camera or exit demo"
+                    aria-label="Disconnect camera"
                     onClick={() => {
                       disconnectCamera();
                     }}
@@ -1049,12 +999,7 @@ export default function App() {
                   </span>
                 ))
               ) : !appearanceVisible && (
-                <span className="muted">{detectionEmpty(providerKind, (cameraOn && modelReady) || demo, !!project.customObjects?.length)}</span>
-              )}
-              {demo && (
-                <button className="text-button" onClick={() => setDemoVisible((v) => !v)}>
-                  {demoVisible ? 'Hide person' : 'Show person'}
-                </button>
+                <span className="muted">{detectionEmpty(providerKind, (cameraOn && modelReady), !!project.customObjects?.length)}</span>
               )}
             </div>
           </section>
@@ -1113,7 +1058,7 @@ export default function App() {
                   — Bounding boxes · — Location · — Near / Far
                 </small>}
                 <details className="compact-advanced"><summary>Advanced vision settings</summary>
-                <span className="backend">{demo ? 'Demo bypasses AI inference' : backend}</span>
+                <span className="backend">{backend}</span>
                 {visionCapabilities.boundingBoxes && <label className="slider-label">
                   Confidence threshold <b>{Math.round(project.vision.confidence * 100)}%</b>
                   <input
@@ -1194,10 +1139,10 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'finch' && <ManualDrive roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady&&!demo,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
+              {robotMode === 'finch' && <ManualDrive coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onArm={() => { rules.reset(); aiRef.current = true; setAi(true); }} onManualTakeover={() => { baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
-              <SensorInputs robotType={robotMode} connected={connected} configuration={project.sensorConfiguration ?? []} state={sensorState}
+              <SensorInputs resetKey={`${project.id}:${sensorDisplayRevision}`} robotType={robotMode} connected={connected} configuration={pollingSensors(project.sensorConfiguration ?? [])} state={sensorState}
                 onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />
             </SetupSection>
             <SetupSection id="objects-panel" title="Objects for this project" summary={[...project.selectedClasses, ...(project.customObjects ?? [])].join(', ') || 'None selected'} icon={<ScanLine size={18} />} open={setupOpen === 'objects-panel'} onToggle={() => toggleSetup('objects-panel')}>
@@ -1210,13 +1155,13 @@ export default function App() {
             <ProjectObjects key={`${project.id}:${providerKind}`} selected={project.selectedClasses} supported={availableClasses}
               capabilities={visionCapabilities}
               rules={project.rules} detections={detections} threshold={project.vision.confidence}
-              live={cameraOn && modelReady && !demo}
+              live={cameraOn && modelReady }
               onChange={selectedClasses => edit({ ...project, selectedClasses })} />
             </SetupSection>
             <SetupSection id="diagnostics-panel" title="Diagnostics" summary={ai ? 'Rules running' : 'Rules paused'} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'diagnostics-panel'} onToggle={() => toggleSetup('diagnostics-panel')}>
         <LiveDiagnostics embedded project={project} detections={detections} target={customTracked} sensors={sensorState} networkCamera={camera.networkDiagnostics}
           ruleResults={rules.diagnostics} follow={actions.followSnapshot} camera={cameraOn && usableFrame}
-          model={modelReady} robot={connected} running={ai} fps={measuredFps} demo={demo} />
+          model={modelReady} robot={connected} running={ai} fps={measuredFps} demo={false} />
         <section className="event-log">
           <button className="log-heading" onClick={() => setShowLog(!showLog)}>
             <span>
@@ -1259,11 +1204,13 @@ export default function App() {
           </div>
           </div>
         <section id="rules" className="rules-section" tabIndex={-1}>
+          <div ref={setNavigationContainer} />
+          <div id="rules-workspace">
           <div className="section-heading">
             <div>
               <h2>
                 <SlidersHorizontal size={20} />
-                Your AI rules <span className="count">{project.rules.length}</span><small className="rules-status" role="status">{ai ? 'Running' : 'Paused'}</small>
+                Your AI rules <span className="count">{project.rules.length}</span>
               </h2>
             </div>
             <div className="rules-controls">
@@ -1277,8 +1224,6 @@ export default function App() {
               </button>
             </div>
           </div>
-          <p className="setup-guidance rules-guidance" id="play-blocker" aria-live="polite">Create rules to tell your robot what to do. {!ai && !readiness.play
-            ? ` · Before Play: ${setupGuidance.replace(/^Next: /, '').replace(/^Ready! /, '')}` : ''}</p>
           {project.rules.map((r, i) => (
             <RuleCard
               key={r.id}
@@ -1290,7 +1235,7 @@ export default function App() {
               index={i}
               capabilities={ROBOTS[robotMode].actions}
               robotName={ROBOTS[robotMode].name}
-              sensors={project.sensorConfiguration ?? []}
+              sensors={supportedRuleSensors(robotMode)}
               sensorsAvailable={true}
               onChange={(rule) =>
                 edit({
@@ -1314,32 +1259,15 @@ export default function App() {
               </button>
             </div>
           )}
-          <div className="tip">
-            <Leaf size={16} />
-            <span>
-              <b>Start small, think big.</b> Choose an object and add one robot action. Then
-              make it your own.
-            </span>
           </div>
         </section>
         </div>
       </main>
       <div className="safety-bar" id="play-controls" tabIndex={-1}>
-              <button className="primary" disabled={ai || !readiness.play} aria-describedby={!readiness.play ? 'play-blocker' : undefined} onClick={toggleAI}>
+              <button className="primary" disabled={ai || !readiness.play} title={readiness.play ? undefined : readiness.helper} onClick={toggleAI}>
                 <Play size={16} /> {ai ? 'Running' : 'Play rules'}
               </button>
 
-        <div>
-          <span className={`safety-dot ${ai ? 'on' : ''}`} />
-          <b>{ai ? 'Your rules are listening' : 'You’re in control'}</b>
-          <span>
-            {ai
-              ? lastRule
-                ? `Last run: ${lastRule}`
-                : 'Waiting for a matching detection'
-              : 'AI is paused. Your robot only moves when you say so.'}
-          </span>
-        </div>
         <button className="stop-button" onClick={stop}>
           <Square size={17} fill="currentColor" />
           STOP ROBOT<kbd>space</kbd>
@@ -1408,12 +1336,11 @@ export default function App() {
                 <span className="eyebrow">YOUR FIRST ROBOT EXPERIMENT</span>
                 <h2>From seeing to doing.</h2>
                 <p>
-                  Start with the demo, or let your webcam do the seeing. Everything runs in this
-                  browser.
+                  Connect your camera, load an AI model, and create rules for your robot.
                 </p>
                 <ol>
                   <li>
-                    <b>Connect a camera.</b> Allow browser access, or choose “Try the demo.”
+                    <b>Connect a camera.</b> Allow browser access or choose a network camera.
                   </li>
                   <li>
                     <b>Load the model.</b> Choose a YOLO11 COCO ONNX file: static 640 × 640, no NMS.
@@ -1433,19 +1360,9 @@ export default function App() {
                   </li>
                 </ol>
                 <p className="help-note">
-                  Demo detections are simulated. Robot actions control the attached physical device. Read the project README for model export
+                  Robot actions control the attached physical device. Read the project README for model export
                   instructions.
                 </p>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setHelp(false);
-                    startDemo();
-                  }}
-                >
-                  Try the demo
-                  <ArrowRight size={16} />
-                </button>
               </>
             ) : (
               <>

@@ -1,6 +1,9 @@
 import type {RoadSignVision} from '../core/RoadSigns';
 import type { SensorProvider } from '../core/SensorProvider';
-import { NavigationControls } from './NavigationControls';
+import { BaseDrivingControls } from './BaseDrivingControls';
+import type { BaseBehaviorCoordinator } from '../core/BaseBehaviorCoordinator';
+import type { SensorDescriptor } from '../core/Sensors';
+import { createPortal } from 'react-dom';
 import type { RobotAdapter } from '../core/RobotAdapter';
 import { EncoderRecording, encoderPair } from '../core/EncoderRecording';
 import type { SensorState } from '../core/Sensors';
@@ -19,7 +22,9 @@ export const driveKeys: Readonly<Record<string, Direction>> = {
 const editing = (target: EventTarget | null) => target instanceof Element &&
   !!target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
 
-export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, navigationContainer, coordinator, ruleSensors = [], onArm, onManualTakeover, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+  coordinator?: BaseBehaviorCoordinator; ruleSensors?: SensorDescriptor[]; onArm?: () => void; onManualTakeover?: () => void;
+  navigationContainer?: HTMLDivElement | null;
   roadVision?:RoadSignVision;
   robot?: RobotAdapter; lineSensorProvider?: SensorProvider;
   sensors?: SensorState; stopRevision?: number;
@@ -36,7 +41,7 @@ export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, con
     else recording.observe(pair());
     refresh(value => value + 1);
   }, [sensors, connected, recording]);
-  useEffect(() => { recording.stop(pair()); }, [stopRevision, recording]);
+  useEffect(() => { recording.stop(pair()); cancelNavigation.current?.(); }, [stopRevision, recording]);
   const [speed, setSpeed] = useState(30);
   const [direction, setDirection] = useState<Direction | null>(null);
   const held = useRef<string | null>(null);
@@ -51,6 +56,7 @@ export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, con
   };
   const start = (next: Direction, token: string) => {
     if (!current.current.enabled || held.current !== null || editing(document.activeElement) || document.hidden) return false;
+    onManualTakeover?.();
     cancelNavigation.current?.();
     held.current = token;
     setDirection(next);
@@ -114,7 +120,7 @@ export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, con
         </button>)}
     </div>
     <small>{running ? 'Stop rules to drive manually.' : !connected ? 'Connect Finch to drive manually.' : 'Arrow Keys / WASD · Hold to move, release to stop.'}</small>
-    {robot && <NavigationControls roadVision={roadVision} lineSensorProvider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} enabled={current.current.enabled && direction === null} speed={speed} stopRevision={stopRevision} cancelRef={cancelNavigation} />}
+    {robot && navigationContainer && coordinator && createPortal(<BaseDrivingControls coordinator={coordinator} ruleSensors={ruleSensors} onArm={onArm ?? (() => {})} rulesRunning={running} provider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} available={connected && !busy && direction === null} speed={speed} cancelRef={cancelNavigation} />, navigationContainer)}
     <details className="home-recording"><summary>Home &amp; path recording</summary>
     <div className="home-controls">
       <button disabled={!connected || running || busy || navigationActive || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>

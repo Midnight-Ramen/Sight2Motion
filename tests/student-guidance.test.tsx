@@ -48,10 +48,9 @@ it('empty detection text is provider-aware and not an error', () => {
   expect(detectionEmpty('teachable-machine', true, false)).toContain('confident classification');
   expect(detectionEmpty('yolo', true, true)).toContain('selected target');
 });
-it('Play references its blocker and model failures are not duplicated in banners', () => {
+it('Play exposes its blocker as a tooltip and model failures are not duplicated in banners', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
-  expect(app).toContain('id="play-blocker"');
-  expect(app).toContain("aria-describedby={!readiness.play ? 'play-blocker'");
+  expect(app).toContain('title={readiness.play ? undefined : readiness.helper}');
   const modelCatch = app.slice(app.lastIndexOf('setModelError(true)'), app.indexOf('function toggleAI'));
   expect(modelCatch).not.toContain('setNotice(');
   expect(modelCatch).toContain('console.warn');

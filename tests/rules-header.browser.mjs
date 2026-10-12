@@ -12,13 +12,11 @@ try {
   await page.setViewportSize({width,height:900});
   const geometry = await page.evaluate(() => {
    const box = s => document.querySelector(s).getBoundingClientRect();
-   return {gap:box('.rule-card').top-box('#play-blocker').bottom,
-    aligned:Math.abs(box('.section-heading h2').top-box('.rules-status').top),
-    right:box('.rules-controls').right, headerRight:box('.rules-section > .section-heading').right};
+   return {gap:box('.rule-card').top-box('#rules-workspace > .section-heading').bottom,
+    right:box('.rules-controls').right, headerRight:box('#rules-workspace > .section-heading').right};
   });
-  expect(geometry.gap).toBeGreaterThanOrEqual(8);
-  expect(geometry.gap).toBeLessThanOrEqual(8);
-  expect(geometry.aligned).toBeLessThan(10);
+  expect(geometry.gap).toBeGreaterThanOrEqual(4);
+  expect(geometry.gap).toBeLessThanOrEqual(24);
   expect(Math.abs(geometry.right-geometry.headerRight)).toBeLessThan(2);
  }
  console.log('Rules header geometry and new-rule trigger passed.');

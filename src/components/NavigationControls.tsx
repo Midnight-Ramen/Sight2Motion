@@ -57,9 +57,10 @@ export function NavigationControls({ engine, robot, roadVision, lineSensorProvid
   <div><label>Turn <input aria-label="Turn angle degrees" type="number" min={1} max={360} value={angle} onChange={e=>setAngle(+e.target.value)} /> °</label>
    <button disabled={disabled||!calibrated} onClick={()=>void controller.start({kind:'turn',direction:'left',amount:angle},speed)}>Turn Left</button>
    <button disabled={disabled||!calibrated} onClick={()=>void controller.start({kind:'turn',direction:'right',amount:angle},speed)}>Turn Right</button></div>
-  <div><button disabled={disabled||!recording.origin||!recording.segments.length} onClick={()=>void controller.returnToBase(recording,speed)}>Return to Base</button>
+  <div><button disabled={disabled||!recording.origin||!recording.segments.length} onClick={()=>void controller.returnToBase(recording,speed)}>Return to Base</button><small>Experimental</small>
    <small>Path: {recording.segments.length} segments</small></div>
   {!calibrated&&<small>Turn calibration required</small>}
+  <h3>Safety</h3>
   <div><label><input type="checkbox" checked={emergencyEnabled} disabled={controller.active} onChange={e=>setEmergencyEnabled(e.target.checked)} /> Emergency braking</label>
    <input aria-label="Emergency stop distance cm" type="number" min={0} value={emergencyDistance} disabled={controller.active||!emergencyEnabled} onChange={e=>setEmergencyDistance(+e.target.value)} /> cm</div>
   <div className="behavior-heading"><h3>Assists &amp; Autonomy</h3><button aria-expanded={adding} onClick={()=>setAdding(!adding)}>+ Add behavior</button></div>

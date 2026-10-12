@@ -28,12 +28,10 @@ it('makes sustained missing frames unavailable and recovers on a new frame', () 
   expect(cameraGuidanceReady(true, 100, 1600)).toBe(false);
   expect(cameraGuidanceReady(true, 1700, 1700)).toBe(true);
 });
-it('keeps compact guidance mounted with recovery text', () => {
-  const app = readFileSync('src/App.tsx', 'utf8'), css = readFileSync('src/theme.css', 'utf8');
-  expect(app).toContain('<p className="setup-guidance rules-guidance" id="play-blocker" aria-live="polite">Create rules to tell your robot what to do. {!ai && !readiness.play');
-  expect(css).toMatch(/\.rules-section #play-blocker\s*\{[^}]*min-height:\s*0/);
+it('keeps frame readiness without the removed guidance banners', () => {
+  const app = readFileSync('src/App.tsx', 'utf8');
   expect(app).toContain('cameraGuidanceReady(cameraOn, lastFrameAt, now)');
-  expect(app).toContain('Camera frames are unavailable. Reconnect your camera.');
+  expect(app).not.toContain('className="setup-guidance rules-guidance"');
 });
 it('interpolates every control tick between perception results, with only one motor timer', async () => {
   vi.useFakeTimers(); const send = vi.fn().mockResolvedValue(undefined);

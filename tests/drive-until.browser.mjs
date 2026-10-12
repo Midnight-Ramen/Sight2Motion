@@ -8,9 +8,10 @@ await p.route('http://127.0.0.1:30061/**',r=>{
 const stopped=()=>paths.filter(x=>x.includes('/stopall/')).length;
 try{
  await p.goto('http://127.0.0.1:5174');
+ await p.getByText('Navigation & safety',{exact:true}).click();
  await p.getByRole('button',{name:'Your robot',exact:true}).click();
  await p.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
- await p.getByRole('button',{name:'+ Add behavior',exact:true}).click();await p.getByLabel('Add behavior',{exact:true}).selectOption('Drive Until');
+ await p.getByText('Drive Until',{exact:true}).click();
  const start=p.getByRole('button',{name:'Start Drive Until',exact:true});
  await expect(start).toBeEnabled();
  await p.getByRole('spinbutton',{name:'Drive Until speed',exact:true}).fill('25');

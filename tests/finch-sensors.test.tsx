@@ -199,11 +199,11 @@ it.each(['timed', 'continuous', 'follow'] as const)('sensor Stop interrupts %s m
   await engine.stop();
 });
 
-it('sensor-only project is ready without camera/model/classes; missing sensor is not ready', () => {
+it('sensor-only project auto-registers a supported input without camera/model/classes', () => {
   const project = { ...makeProject(), rules: [rule()], selectedClasses: [], sensorConfiguration: [distance] };
   const state = { usableFrame: false, modelReady: false, classes: [], connected: true, hardwareBusy: false, running: false, demo: false };
   expect(setupReadiness(project, state).play).toBe(true);
-  expect(setupReadiness({ ...project, sensorConfiguration: [] }, state).play).toBe(false);
+  expect(setupReadiness({ ...project, sensorConfiguration: [] }, state).play).toBe(true);
   project.rules[0].actions = [{ ...makeAction('move'), mode: 'follow' }];
   expect(setupReadiness(project, state).play).toBe(false);
 });
