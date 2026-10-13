@@ -1,3 +1,4 @@
+import { NumericInput } from './NumericInput';
 import { FINCH_ORIENTATIONS, SENSOR_OPERATORS, type SensorCondition, type SensorDescriptor } from '../core/Sensors';
 export function SensorConditions({ conditions, sensors, available, onChange, sensorOnly = false }: {
   sensorOnly?: boolean;
@@ -38,7 +39,7 @@ export function SensorConditions({ conditions, sensors, available, onChange, sen
         {sensor?.type === 'finchOrientation' ? <select aria-label={`Sensor condition ${i + 1} value`} value={String(condition.value)}
           onChange={e => patch(condition.id, { value: e.target.value })}>
           {FINCH_ORIENTATIONS.map(value => <option key={value}>{value}</option>)}
-        </select> : <input type="number" aria-label={`Sensor condition ${i + 1} value`} value={typeof condition.value === 'number' ? condition.value : 0}
+        </select> : <NumericInput type="number" aria-label={`Sensor condition ${i + 1} value`} value={typeof condition.value === 'number' ? condition.value : 0}
           onChange={e => updateCondition(condition, { value: Number(e.target.value) })} />}
         <span>{sensor?.unit}</span>
         {pair && <small>Both line sensors must match.</small>}

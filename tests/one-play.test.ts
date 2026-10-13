@@ -29,6 +29,11 @@ it('connects the existing Play entry to the base and removes duplicate start con
   const base = readFileSync('src/components/BaseDrivingControls.tsx', 'utf8');
   expect(app).toContain('baseCoordinator.startProgram()');
   expect(base).not.toContain('Start base behavior');
-  expect(base).toContain('Ready to run');
+  expect(base).toContain('Robot disconnected');
   expect(base).toContain("if (mode === 'None') { coordinator.disarm(); return; }");
+});
+
+it('a refused base match keeps global Play from becoming active',()=>{
+ const coordinator=new BaseBehaviorCoordinator({} as ActionEngine);
+ coordinator.program={selected:true,ready:()=>true,start:()=>false};expect(coordinator.startProgram()).toBe(false);
 });

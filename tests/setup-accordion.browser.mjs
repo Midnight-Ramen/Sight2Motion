@@ -17,11 +17,11 @@ try {
  const before = await save();
  await page.getByRole('button',{name:'Your robot',exact:true}).click();
  await expect(page.getByLabel('Robot',{exact:true})).toBeVisible();
- await page.getByRole('button',{name:'AI model',exact:true}).click();
+ await page.getByRole('button',{name:'AI vision',exact:true}).click();
  await expect(page.getByLabel('Robot',{exact:true})).toBeHidden();
- await expect(page.getByRole('combobox',{name:'AI model',exact:true})).toBeVisible();
+ await expect(page.getByRole('combobox',{name:'AI vision',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Sensors',exact:true}).click();
- await expect(page.getByRole('combobox',{name:'AI model',exact:true})).toBeHidden();
+ await expect(page.getByRole('combobox',{name:'AI vision',exact:true})).toBeHidden();
  await expect(page.getByRole('region',{name:'Finch Sensors',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Diagnostics',exact:true}).click();
  await expect(page.locator('#diagnostics-panel .event-log')).toBeVisible();
@@ -31,9 +31,9 @@ try {
  expect(after.sensorConfiguration).toEqual(before.sensorConfiguration);
  expect(after).not.toHaveProperty('setupOpen');
  expect(await camera.evaluate(el=>el === document.querySelector('#camera-view'))).toBe(true);
- await page.getByRole('navigation',{name:'Setup steps'}).getByRole('button',{name:'Load AI model'}).click();
- await expect(page.getByRole('button',{name:'AI model',exact:true})).toHaveAttribute('aria-expanded','true');
- await page.getByRole('button',{name:'AI model',exact:true}).click();
+ await page.getByRole('navigation',{name:'Setup steps'}).getByRole('button',{name:'Choose AI vision'}).click();
+ await expect(page.getByRole('button',{name:'AI vision',exact:true})).toHaveAttribute('aria-expanded','true');
+ await page.getByRole('button',{name:'AI vision',exact:true}).click();
  await mkdir('test-results',{recursive:true});
  for(const [width,height] of [[1440,900],[1920,1080],[1152,768],[390,844]]) {
   await page.setViewportSize({width,height});

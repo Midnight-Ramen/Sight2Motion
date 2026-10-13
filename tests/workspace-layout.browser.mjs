@@ -66,7 +66,7 @@ await expect(page.locator('.rule-card').first()).toHaveClass(/disabled-rule/);
   await openSetup(page, 'Your robot');
 await page.getByText('Hardware tests & reset',{exact:true}).click();
 await expect(page.getByRole('button',{name:'GREEN BEAK',exact:true})).toBeVisible();
-  await openSetup(page, 'AI model');
+  await openSetup(page, 'AI vision');
 await page.getByText('Advanced vision settings',{exact:true}).click();
 await expect(page.getByLabel('Inference FPS')).toBeVisible();
 await page.getByLabel('Action 1 type',{exact:true}).first().selectOption('move');

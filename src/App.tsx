@@ -1,3 +1,5 @@
+import { SelectedTargetProgram } from './core/SelectedTargetProgram';
+import { SetupStatus } from './components/SetupStatus';
 import { BaseBehaviorCoordinator } from './core/BaseBehaviorCoordinator';
 import { registerRuleSensors, supportedRuleSensors, pollingSensors, derivedSensorState } from './core/RuleSensors';
 import { ManualDrive } from './components/ManualDrive';
@@ -67,6 +69,7 @@ import { HummingbirdAdapter } from './core/HummingbirdAdapter';
 import { ROBOTS, resetActions } from './core/RobotCapabilities';
 import { FinchAdapter, type FinchStatus } from './core/FinchAdapter';
 import { RobotRouter } from './core/RobotRouter';
+import { classroomRules } from './core/HummingbirdClassroom';
 import { HardwareTest } from './components/HardwareTest';
 import { SensorInputs } from './components/SensorInputs';
 import { finchSensorDescriptor, type SensorState } from './core/Sensors';
@@ -140,15 +143,21 @@ export default function App() {
       }),
   );
   const [baseCoordinator] = useState(() => new BaseBehaviorCoordinator(actions));
-  useEffect(() => { if (!ai) baseCoordinator.disarm(); }, [ai, baseCoordinator]);
   const [, refreshProgram] = useState(0);
   const programChanged = useCallback(() => refreshProgram(value => value + 1), []);
+  const profileAbort = useRef<() => void>(() => {});
+  const [profileFollow] = useState(() => new SelectedTargetProgram(actions, () => profileAbort.current(), programChanged));
+  useEffect(() => { if (!ai) { profileFollow.end();baseCoordinator.disarm(); } }, [ai, baseCoordinator, profileFollow]);
   const [sensorDisplayRevision, setSensorDisplayRevision] = useState(0);
   const [rules] = useState(() => new RuleEngine());
   const [camera] = useState(() => new CameraManager());
   const [vision] = useState(() => new VisionSession());
   const [availableClasses, setAvailableClasses] = useState<readonly string[]>(() => vision.getClasses());
   const providerKind = project.visionProvider ?? 'yolo';
+  // Selected-target mode presents the existing SAM selector; persisted inference providers stay compatible.
+  const [selectedTargetMode, setSelectedTargetMode] = useState(false);
+  const [samStatus, setSamStatus] = useState('Loading MobileSAM…');
+  const visionMode = selectedTargetMode ? 'mobile-sam' : providerKind;
   const visionCapabilities = capabilitiesFor(providerKind);
   const [tmUrlInput, setTmUrlInput] = useState(project.teachableMachineUrl ?? '');
   const [modelError, setModelError] = useState(false);
@@ -240,11 +249,16 @@ export default function App() {
   const readiness = setupReadiness(project, {
     usableFrame: cameraOn && usableFrame, modelReady, classes: availableClasses,
     connected, hardwareBusy, running: ai, demo: false,
+    baseProgram: { configured: !!baseCoordinator.program?.selected, ready: baseCoordinator.programReady, needsCamera: !!baseCoordinator.program?.requiresCamera },
     trackedName: customTracked?.state === 'TRACKING' ? customTracked.displayName : undefined,
   });
   const programConfigured = (readiness.play || (baseCoordinator.program?.selected && !project.rules.some(rule => rule.enabled) && connected && !hardwareBusy));
   const programCanPlay = programConfigured &&
     (robotMode !== 'finch' || baseCoordinator.programReady);
+  const onProfileTracking = useCallback((target: TrackedTarget | null) => {
+    setCustomTracked(target);
+    void profileFollow.publish(target, target?.lastSeenAt ?? -Infinity, 750);
+  }, [profileFollow]);
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
     setProject(registerRuleSensors(p));
@@ -252,13 +266,15 @@ export default function App() {
     rules.reset();
   };
   const pause = useCallback(() => {
+    profileFollow.end();
     baseCoordinator.disarm();
     setManualStopRevision(value => value + 1);
     aiRef.current = false;
     setAi(false);
     rules.reset();
     void actions.stop();
-  }, [actions, rules, baseCoordinator]);
+  }, [actions, rules, baseCoordinator, profileFollow]);
+  profileAbort.current = pause;
   useEffect(() => {
     if (!connected) pause();
   }, [connected, pause]);
@@ -317,7 +333,7 @@ export default function App() {
         { state: sensorRef.current, configuration: registerRuleSensors(p).sensorConfiguration ?? [], available: robot.connected });
       if (selectedSafety && !rules.activeRules.length && !triggered.length) return;
       const wasBusy = actions.busy;
-      void baseCoordinator.update(triggered, rules.activeRules, { detections: items, capturedAt, width: camera.width || (0), height: camera.height || (0) });
+      void baseCoordinator.update(p.robotType === 'hummingbird' ? classroomRules(triggered, p.servoHome) : triggered, p.robotType === 'hummingbird' ? classroomRules(rules.activeRules, p.servoHome) : rules.activeRules, { detections: items, capturedAt, width: camera.width || (0), height: camera.height || (0) });
       if (wasBusy) return;
       if (triggered.length) {
         triggered.forEach((r) => log(`Running “${r.name}”`));
@@ -838,45 +854,6 @@ export default function App() {
 
       </header>
       <main>
-        <nav className="workflow" aria-label="Setup steps">
-          {[
-            {
-              label: 'Start Camera',
-              done: readiness.camera,
-              icon: Camera,
-              action: () => focusSetupSection('camera-panel'),
-            },
-            {
-              label: 'Load AI model',
-              done: readiness.vision,
-              icon: Sparkles,
-              action: () => openSetup('model-panel'),
-            },
-            {
-              label: 'Connect robot',
-              done: readiness.robot,
-              icon: Radio,
-              action: () =>
-                openSetup('robot-panel'),
-            },
-            {
-              label: 'Add Rule',
-              done: readiness.rules,
-              icon: SlidersHorizontal,
-              action: () =>
-                focusSetupSection('rules'),
-            },
-            { label: ai ? 'Running' : 'Bring it to life', done: readiness.play || ai, icon: Zap, action: () => focusSetupSection('play-controls') },
-          ].map((s, i) => (
-            <button key={s.label} onClick={s.action}>
-              <span className={`step-number ${s.done ? 'done' : ''}`}>
-                {s.done ? <Check size={13} /> : i + 1}
-              </span>
-              {s.label}
-              {i < 4 && <span className="step-line" />}
-            </button>
-          ))}
-        </nav>
         {notice && (
           <div className="notice" role="status">
             <CircleHelp size={17} />
@@ -917,11 +894,12 @@ export default function App() {
                 </div>
               )}
               <canvas ref={canvas} />
-              <ObjectSelection key={[project.id, cameraSource, cameraOn, mirrorHorizontal].join('-')} camera={camera} available={cameraOn} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.capturedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
-                controlsContainer={followContainer}
-                savedNames={project.customObjects} onTracking={setCustomTracked}
-                onSaveName={name => { setProject(current => ({ ...current, customObjects: [...new Set([...(current.customObjects ?? []), name])].slice(0, 10) })); setDirty(true); }} follow={robotMode === 'finch' ? { engine: actions, container: followContainer, available: connected && !hardwareBusy,
-                  prepare: () => { baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); } } : undefined} />
+              {selectedTargetMode && <ObjectSelection key={[project.id, cameraSource, cameraOn, mirrorHorizontal].join('-')} camera={camera} available={cameraOn} mirror={mirrorHorizontal} detections={detections} visionUpdatedAt={latestVision.current.capturedAt} trackingEnabled={providerKind === 'yolo' && modelReady}
+                controlsContainer={followContainer} onModelStatus={setSamStatus}
+                savedNames={project.customObjects} savedProfiles={project.targetProfiles}
+                onProfilesChange={targetProfiles=>{setProject(current=>({...current,targetProfiles,customObjects:[...new Set([...(current.customObjects??[]),...targetProfiles.map(p=>p.label)])]}));setDirty(true);}}
+                onTracking={onProfileTracking} profileProgram={robotMode === 'finch' ? profileFollow : undefined}
+                onSaveName={name => { setProject(current => ({ ...current, customObjects: [...new Set([...(current.customObjects ?? []), name])].slice(0, 10) })); setDirty(true); }} />}
               {cameraOn && (
                 <div className="feed-top">
                   <span>
@@ -971,15 +949,15 @@ export default function App() {
                   <button disabled={cameraBusy} onClick={() => void connectCamera()}>{cameraBusy ? 'Connecting' : 'Connect'}</button>}
               </>}
             </div>
-            <details className="selection-drawer"><summary>Selected object &amp; Follow controls</summary><div ref={setFollowContainer} /></details>
-            <div className="preview-toolbar">
+            {selectedTargetMode && <details className="selection-drawer"><summary>Selected target &amp; Follow</summary><div ref={setFollowContainer} /></details>}
+            {!selectedTargetMode && <div className="preview-toolbar">
               <span>
                 <ScanLine size={16} />
-                <b>{detections.length}</b> {visionCapabilities.boundingBoxes ? 'objects detected' : 'class predictions'}
+                <b>{selectedTargetMode ? (customTracked ? 1 : 0) : detections.length}</b> {selectedTargetMode ? 'selected target' : visionCapabilities.boundingBoxes ? 'objects detected' : 'class predictions'}
               </span>
-              {appearanceVisible && <span>1 selected target tracked</span>}
-              <span className="fps">{measuredFps.toFixed(0)} FPS</span>
-              {visionCapabilities.boundingBoxes && <label className="visualization-toggle">
+              {selectedTargetMode && customTracked && <span>{customTracked.state}</span>}
+              {!selectedTargetMode && <span className="fps">{measuredFps.toFixed(0)} FPS</span>}
+              {!selectedTargetMode && visionCapabilities.boundingBoxes && <label className="visualization-toggle">
                 <input
                   type="checkbox"
                   checked={project.vision.visualize}
@@ -990,10 +968,11 @@ export default function App() {
                 <Eye size={16} />
                 Show boxes
               </label>}
-            </div>
-            <div className="detection-strip">
-              {appearanceVisible && <span className="detection-chip"><span />{customTracked.displayName}<b>Tracked selection</b></span>}
-              {detections.length ? (
+            </div>}
+            {!selectedTargetMode && <div className="detection-strip">
+              {selectedTargetMode && <span className="muted">{customTracked ? `${customTracked.displayName || 'Selected target'} - ${customTracked.state}` : 'Capture a frame to save a target reference view.'}</span>}
+              {selectedTargetMode && appearanceVisible && <span className="detection-chip"><span />{customTracked.displayName}<b>Tracked selection</b></span>}
+              {!selectedTargetMode && (detections.length ? (
                 detections.map((d, i) => (
                   <span
                     className={`detection-chip ${!visionCapabilities.boundingBoxes && i === 0 ? 'top-prediction' : ''}`}
@@ -1006,17 +985,22 @@ export default function App() {
                   </span>
                 ))
               ) : !appearanceVisible && (
-                <span className="muted">{detectionEmpty(providerKind, (cameraOn && modelReady), !!project.customObjects?.length)}</span>
-              )}
-            </div>
+                <span className="muted">{detectionEmpty(providerKind, (cameraOn && modelReady), false)}</span>
+              ))}
+            </div>}
           </section>
           <aside>
-            <SetupSection id="model-panel" title="AI model" summary={`${providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'} · ${modelBusy ? 'Loading' : modelReady ? 'Ready' : 'Not loaded'}`} icon={<Sparkles size={18} />} open={setupOpen === 'model-panel'} onToggle={() => toggleSetup('model-panel')}>
+            <SetupSection id="model-panel" title="AI vision" summary={`${selectedTargetMode ? 'MobileSAM' : providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'} · ${selectedTargetMode ? (samStatus === 'MobileSAM ready' ? 'Ready' : samStatus.startsWith('Loading') ? 'Loading…' : 'Unavailable') : modelBusy ? 'Loading' : modelReady ? 'Ready' : 'Not loaded'}`} icon={<Sparkles size={18} />} open={setupOpen === 'model-panel'} onToggle={() => toggleSetup('model-panel')}>
               <div className="model-body">
-                <label>AI model
-                  <select aria-label="AI model" value={providerKind} onChange={e => changeProvider(e.target.value as VisionProviderKind)}>
+                <label>AI vision
+                  <select aria-label="AI vision" value={visionMode} onChange={e => {
+                    const next = e.target.value;
+                    pause(); setSelectedTargetMode(next === 'mobile-sam');
+                    if (next !== 'mobile-sam' && next !== providerKind) changeProvider(next as VisionProviderKind);
+                  }}>
                     <option value="yolo">YOLO11n — Object Detection</option>
                     <option value="teachable-machine">Teachable Machine — Image Classification</option>
+                    <option value="mobile-sam">MobileSAM &mdash; Selected Target</option>
                   </select>
                 </label>
                 <div className="model-name">
@@ -1024,12 +1008,12 @@ export default function App() {
                     <ScanLine size={20} />
                   </span>
                   <div>
-                    <strong>{providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'}</strong>
-                    <span>{visionCapabilities.boundingBoxes ? 'Object detection' : 'Image Classification'} · {availableClasses.length} classes</span>
+                    <strong>{selectedTargetMode ? 'MobileSAM' : providerKind === 'yolo' ? 'YOLO11n' : 'Teachable Machine'}</strong>
+                    <span>{selectedTargetMode ? 'Selected target' : `${visionCapabilities.boundingBoxes ? 'Object detection' : 'Image Classification'} - ${availableClasses.length} classes`}</span>
                   </div>
-                  <span className={`model-indicator ${modelReady ? 'ready' : ''}`} />
+                  <span className={`model-indicator ${(selectedTargetMode ? samStatus === 'MobileSAM ready' : modelReady) ? 'ready' : ''}`} />
                 </div>
-                {providerKind === 'teachable-machine' && <label>Model URL
+                {!selectedTargetMode && providerKind === 'teachable-machine' && <label>Model URL
                   <input id="tm-model-url" aria-label="Model URL" type="url" value={tmUrlInput}
                     placeholder="https://teachablemachine.withgoogle.com/models/.../"
                     onChange={e => {
@@ -1041,7 +1025,7 @@ export default function App() {
                       edit({ ...project, teachableMachineUrl });
                     }} />
                 </label>}
-                <div className="model-load">
+                {!selectedTargetMode && <div className="model-load">
                   <button disabled={modelBusy} onClick={() => loadModel()}>
                     {modelBusy ? (
                       <LoaderCircle className="spin" size={14} />
@@ -1058,15 +1042,15 @@ export default function App() {
                   >
                     <FolderOpen size={16} />
                   </button>}
-                </div>
-                <span role="status">{modelGuidance(providerKind, modelBusy, modelReady, modelError, tmUrlInput)}</span>
-                {!visionCapabilities.boundingBoxes && modelReady && <small>
+                </div>}
+                <span role="status">{selectedTargetMode ? samStatus : modelGuidance(providerKind, modelBusy, modelReady, modelError, tmUrlInput)}</span>
+                {!selectedTargetMode && !visionCapabilities.boundingBoxes && modelReady && <small>
                   ✓ Custom classes · ✓ Confidence rules · ✓ Robot actions<br />
                   — Bounding boxes · — Location · — Near / Far
                 </small>}
-                <details className="compact-advanced"><summary>Advanced vision settings</summary>
-                <span className="backend">{backend}</span>
-                {visionCapabilities.boundingBoxes && <label className="slider-label">
+                <details className="compact-advanced"><summary>{selectedTargetMode ? 'Camera settings' : 'Advanced vision settings'}</summary>
+                {!selectedTargetMode && <span className="backend">{backend}</span>}
+                {!selectedTargetMode && visionCapabilities.boundingBoxes && <label className="slider-label">
                   Confidence threshold <b>{Math.round(project.vision.confidence * 100)}%</b>
                   <input
                     type="range"
@@ -1083,7 +1067,7 @@ export default function App() {
                   />
                 </label>}
                 <div className="settings-row">
-                  <label>
+                  {!selectedTargetMode && <label>
                     Inference speed
                     <select
                       aria-label="Inference FPS"
@@ -1098,7 +1082,7 @@ export default function App() {
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </label>}
                   {cameraSource === 'local' && <label>
                     Camera
                     <select
@@ -1138,6 +1122,8 @@ export default function App() {
               </div>
               <HardwareTest
                 robotType={robotMode}
+                servoHome={project.servoHome}
+                onServoHomeChange={servoHome => edit({ ...project, servoHome })}
                 status={robotMode === 'finch' ? finchStatus : hummingbirdStatus}
                 busy={hardwareBusy}
                 onAttach={() => void attachRobot()}
@@ -1146,24 +1132,24 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'finch' && <ManualDrive coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onProgramChange={programChanged} onManualTakeover={() => { baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
+              {robotMode === 'finch' && <ManualDrive selectedTargetProgram={profileFollow} coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onProgramChange={programChanged} onManualTakeover={() => { profileFollow.end(); baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
               <SensorInputs resetKey={`${project.id}:${sensorDisplayRevision}`} robotType={robotMode} connected={connected} configuration={pollingSensors(project.sensorConfiguration ?? [])} state={sensorState}
                 onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />
             </SetupSection>
-            <SetupSection id="objects-panel" title="Objects for this project" summary={[...project.selectedClasses, ...(project.customObjects ?? [])].join(', ') || 'None selected'} icon={<ScanLine size={18} />} open={setupOpen === 'objects-panel'} onToggle={() => toggleSetup('objects-panel')}>
-            {!!project.customObjects?.length && <section className="project-objects" aria-label="Custom selected objects">
+            <SetupSection id="objects-panel" title={selectedTargetMode ? 'Selected targets' : providerKind === 'teachable-machine' ? 'Model classes' : 'Objects for this project'} summary={[...project.selectedClasses, ...(project.customObjects ?? [])].join(', ') || 'None selected'} icon={<ScanLine size={18} />} open={setupOpen === 'objects-panel'} onToggle={() => toggleSetup('objects-panel')}>
+            {selectedTargetMode && !!project.customObjects?.length && <section className="project-objects" aria-label="Custom selected objects">
               <h3>My selected objects</h3>
               <div className="project-object-chips">{project.customObjects.map(name => <span className="project-object-chip" key={name}>{name} - {customTracked?.detectorLabel === 'appearance' && customTracked.displayName === name ? customTracked.state : 'Select to track'}
-                <button aria-label={`Remove selected object ${name}`} onClick={() => edit({ ...project, customObjects: project.customObjects?.filter(n => n !== name) })}>×</button></span>)}</div>
-              <p>Select an object in the camera and reuse its name to track it. One active target at a time. Names are saved; visual selections must be made again after loading. Use Follow selected target to follow these objects.</p>
+                <button aria-label={`Remove selected object ${name}`} onClick={() => edit({ ...project, customObjects: project.customObjects?.filter(n => n !== name), targetProfiles: project.targetProfiles?.filter(p => p.label !== name) })}>×</button></span>)}</div>
+              <p>Capture reference views, choose Follow selected target as the base behavior, then press Play rules.</p>
             </section>}
-            <ProjectObjects key={`${project.id}:${providerKind}`} selected={project.selectedClasses} supported={availableClasses}
+            {!selectedTargetMode && <ProjectObjects key={`${project.id}:${providerKind}`} selected={project.selectedClasses} supported={availableClasses}
               capabilities={visionCapabilities}
               rules={project.rules} detections={detections} threshold={project.vision.confidence}
               live={cameraOn && modelReady }
-              onChange={selectedClasses => edit({ ...project, selectedClasses })} />
+              onChange={selectedClasses => edit({ ...project, selectedClasses })} />}
             </SetupSection>
             <SetupSection id="diagnostics-panel" title="Diagnostics" summary={ai ? 'Rules running' : 'Rules paused'} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'diagnostics-panel'} onToggle={() => toggleSetup('diagnostics-panel')}>
         <LiveDiagnostics embedded project={project} detections={detections} target={customTracked} sensors={sensorState} networkCamera={camera.networkDiagnostics}
@@ -1241,6 +1227,7 @@ export default function App() {
               visionCapabilities={visionCapabilities}
               index={i}
               capabilities={ROBOTS[robotMode].actions}
+              servoHome={project.servoHome}
               robotName={ROBOTS[robotMode].name}
               sensors={supportedRuleSensors(robotMode)}
               sensorsAvailable={true}
@@ -1275,6 +1262,8 @@ export default function App() {
                 <Play size={16} /> {ai ? 'Running' : 'Play rules'}
               </button>
 
+        <SetupStatus readiness={readiness} running={ai} canPlay={!!programCanPlay}
+          onStep={id => ['camera-panel', 'rules', 'play-controls'].includes(id) ? focusSetupSection(id) : openSetup(id)} />
         <button className="stop-button" onClick={stop}>
           <Square size={17} fill="currentColor" />
           STOP ROBOT<kbd>space</kbd>

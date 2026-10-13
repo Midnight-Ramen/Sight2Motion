@@ -59,12 +59,12 @@ await page.addInitScript(() => {
 });
 try {
   await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5174');
-  await expect(page.getByLabel('AI model', { exact: true })).toHaveValue('yolo');
+  await expect(page.getByRole('combobox', { name: 'AI vision', exact: true })).toHaveValue('yolo');
   expect(requests.some(url => /tensorflow|teachablemachine_image/.test(url))).toBe(false);
   await page.getByLabel('Location', { exact: true }).selectOption('center');
   await page.getByRole('button', { name: 'Connect camera', exact: true }).click();
   await expect(page.locator('video')).toHaveJSProperty('readyState', 4);
-  await page.getByLabel('AI model', { exact: true }).selectOption('teachable-machine');
+  await page.getByRole('combobox', { name: 'AI vision', exact: true }).selectOption('teachable-machine');
   await page.getByLabel('Model URL', { exact: true }).fill(base.slice(0, -1));
   await page.getByRole('button', { name: 'Load Model', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Reload model', exact: true })).toBeVisible({ timeout: 60000 });
@@ -98,7 +98,7 @@ try {
   expect(saved.selectedClasses).toEqual(['Eraser', 'Marker', 'Nothing']);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/teachable-machine.png', fullPage: true });
-  await page.getByLabel('AI model', { exact: true }).selectOption('yolo');
+  await page.getByRole('combobox', { name: 'AI vision', exact: true }).selectOption('yolo');
   await expect(page.getByLabel('Location', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Distance', { exact: true })).toBeVisible();
   expect(errors).toEqual([]);

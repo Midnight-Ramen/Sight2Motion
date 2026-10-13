@@ -1,3 +1,4 @@
+import type { SelectedTargetProgram } from '../core/SelectedTargetProgram';
 import type {RoadSignVision} from '../core/RoadSigns';
 import type { SensorProvider } from '../core/SensorProvider';
 import { BaseDrivingControls } from './BaseDrivingControls';
@@ -22,7 +23,8 @@ export const driveKeys: Readonly<Record<string, Direction>> = {
 const editing = (target: EventTarget | null) => target instanceof Element &&
   !!target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
 
-export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, navigationContainer, coordinator, ruleSensors = [], onProgramChange, onManualTakeover, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, navigationContainer, coordinator, selectedTargetProgram, ruleSensors = [], onProgramChange, onManualTakeover, connected, running, busy, open, stopRevision = 0, sensors = EMPTY_SENSORS }: {
+  selectedTargetProgram?: SelectedTargetProgram;
   coordinator?: BaseBehaviorCoordinator; ruleSensors?: SensorDescriptor[]; onProgramChange?: () => void; onManualTakeover?: () => void;
   navigationContainer?: HTMLDivElement | null;
   roadVision?:RoadSignVision;
@@ -120,7 +122,7 @@ export function ManualDrive({ engine, robot, roadVision, lineSensorProvider, nav
         </button>)}
     </div>
     <small>{running ? 'Stop rules to drive manually.' : !connected ? 'Connect Finch to drive manually.' : 'Arrow Keys / WASD · Hold to move, release to stop.'}</small>
-    {robot && navigationContainer && coordinator && createPortal(<BaseDrivingControls coordinator={coordinator} ruleSensors={ruleSensors} onProgramChange={onProgramChange ?? (() => {})} rulesRunning={running} provider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} available={connected && !busy && direction === null} speed={speed} cancelRef={cancelNavigation} />, navigationContainer)}
+    {robot && navigationContainer && coordinator && createPortal(<BaseDrivingControls selectedTargetProgram={selectedTargetProgram} coordinator={coordinator} ruleSensors={ruleSensors} onProgramChange={onProgramChange ?? (() => {})} rulesRunning={running} provider={lineSensorProvider} recording={recording} onActiveChange={setNavigationActive} engine={engine} robot={robot} sensors={sensors} available={connected && !busy && direction === null} speed={speed} cancelRef={cancelNavigation} />, navigationContainer)}
     <details className="home-recording"><summary>Home &amp; path recording</summary>
     <div className="home-controls">
       <button disabled={!connected || running || busy || navigationActive || direction !== null || !pair()} onClick={() => { recording.setHome(pair()); refresh(value => value + 1); }}>Set Home</button>

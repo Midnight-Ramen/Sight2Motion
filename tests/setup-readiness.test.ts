@@ -7,9 +7,12 @@ const ready: SetupState = { usableFrame: true, modelReady: true, classes: ['pers
 afterEach(() => vi.unstubAllGlobals());
 it('keeps one existing progression and navigates every step', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
-  expect(app.match(/aria-label="Setup steps"/g)).toHaveLength(1);
+  const status = readFileSync('src/components/SetupStatus.tsx', 'utf8');
+  expect(status.match(/aria-label="Setup steps"/g)).toHaveLength(1);
+  expect(app).not.toContain('className="workflow"');
+  expect(app).toContain('focusSetupSection(id) : openSetup(id)');
   for (const id of ['camera-panel', 'model-panel', 'robot-panel', 'rules', 'play-controls']) {
-    expect(app).toContain(`${['model-panel', 'robot-panel'].includes(id) ? 'openSetup' : 'focusSetupSection'}('${id}')`);
+    expect(status).toContain(`id: '${id}'`);
     expect(app).toContain(`id="${id}"`);
   }
   const section = { scrollIntoView: vi.fn(), focus: vi.fn() };
@@ -67,4 +70,12 @@ it('guides camera, model, robot, rules and Play in order', () => {
  expect(setupReadiness(p,{...ready,modelReady:false,connected:false}).helper).toContain('Load your AI');
  expect(setupReadiness(p,{...ready,connected:false})).toMatchObject({robot:false,helper:'Next: Connect your robot.'});
  expect(setupReadiness(p,ready).helper).toContain('Add and enable a rule');
+});
+
+it('a configured profile Follow base without rules needs the camera but not a YOLO/TM model',()=>{
+ const project={...makeProject(),rules:[]};
+ const state={usableFrame:true,modelReady:false,classes:[],connected:true,hardwareBusy:false,running:false,demo:false,baseProgram:{configured:true,ready:true,needsCamera:true}};
+ expect(setupReadiness(project,state)).toMatchObject({play:true,helper:'Ready! Press Play.'});
+ expect(setupReadiness(project,{...state,usableFrame:false})).toMatchObject({play:false,helper:'Next: Start your camera.'});
+ expect(setupReadiness(project,{...state,baseProgram:{...state.baseProgram,ready:false}}).play).toBe(false);
 });

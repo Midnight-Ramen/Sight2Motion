@@ -1,8 +1,12 @@
+import { NumericInput } from './NumericInput';
+import { homeAngleForPort } from '../core/HummingbirdClassroom';
+import type { ServoHome } from '../core/types';
 import { NumericSlider } from './NumericSlider';
 import { useId, useState } from 'react';
 import { ActionIcon } from './ActionIcon';
-import { RuleSummary } from './RuleSummary';
-import { ArrowDown, ArrowUp, GripVertical, ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { ruleSummary } from './RuleSummary';
+import { completeRule, type CompletionProblem } from './RuleCompletion';
+import { ArrowDown, ArrowUp, GripVertical, ChevronDown, Plus, Trash2, Check } from 'lucide-react';
 import {
   actionDefinitions,
   ruleSource,
@@ -33,7 +37,9 @@ export function RuleCard({
   sensors = [],
   sensorsAvailable = false,
   guidance,
+  servoHome,
 }: {
+  servoHome?: ServoHome;
   guidance?: string;
   detections?: VisionResult[];
   visionCapabilities?: VisionCapabilities;
@@ -48,10 +54,16 @@ export function RuleCard({
   capabilities: ActionKind[];
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [completionProblem, setCompletionProblem] = useState<CompletionProblem>();
   const editorId = useId();
+  const done = () => {
+    const result = completeRule(rule, sensors, selectedClasses, capabilities, visionCapabilities);
+    setCompletionProblem(result.problem);
+    if (!result.expanded) { onChange(result.rule); setExpanded(false); }
+  };
   const source = ruleSource(rule);
   const sensorOnly = source === 'sensor';
-  const patch = (p: Partial<Rule>) => onChange({ ...rule, ...p });
+  const patch = (p: Partial<Rule>) => { setCompletionProblem(undefined); onChange({ ...rule, ...p }); };
   const currentSizes = detections.filter(d => d.className === rule.className &&
     d.confidence >= rule.confidence &&
     (!rule.region || rule.region === 'anywhere' || d.region === rule.region) &&
@@ -69,12 +81,7 @@ export function RuleCard({
     <article className={`rule-card ${!rule.enabled ? 'disabled-rule' : ''}`}>
       <div className="rule-heading">
         <span className="rule-number">{String(index + 1).padStart(2, '0')}</span>
-        <input
-          aria-label={`Rule ${index + 1} name`}
-          value={rule.name}
-          maxLength={100}
-          onChange={(e) => patch({ name: e.target.value })}
-        />
+        <strong className="rule-title">{ruleSummary(rule, sensors, true)}</strong>
         <label className="switch small">
           <input
             type="checkbox"
@@ -87,13 +94,14 @@ export function RuleCard({
         <button className="icon-button" aria-label={`Delete rule ${index + 1}`} onClick={onDelete}>
           <Trash2 size={16} />
         </button>
-        <button className="rule-edit" aria-expanded={expanded} aria-controls={editorId} onClick={() => setExpanded(!expanded)}>
-          {expanded ? 'Done' : 'Edit'}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} />
+        <button className={`rule-edit ${expanded ? 'rule-done' : ''}`} aria-expanded={expanded} aria-controls={editorId} onClick={() => expanded ? done() : setExpanded(true)}>
+          {expanded && <Check size={16} aria-hidden="true" />}{expanded ? 'Done' : 'Edit'}<ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : undefined }} />
         </button>
       </div>
-      <RuleSummary rule={rule} sensors={sensors} />
       <div id={editorId} hidden={!expanded}>
-      {guidance && compatibleRule(rule, visionCapabilities) && <p role="status">{guidance}</p>}
+      <details className="compact-advanced saved-rule-name"><summary>Saved name</summary><small>{rule.name}</small></details>
+      {completionProblem?.area === 'settings' && <p className="rule-validation" role="alert">{completionProblem.message}</p>}
+      {!completionProblem && guidance && compatibleRule(rule, visionCapabilities) && <p role="status">{guidance}</p>}
       <div className="rule-body">
         <div className="condition">
           <span className="eyebrow">WHEN THIS HAPPENS</span>
@@ -104,6 +112,7 @@ export function RuleCard({
           })}>
             <option value="vision">Vision</option><option value="sensor">Sensor</option><option value="vision-sensor">Vision + Sensor</option>
           </select></label>
+          {(completionProblem?.area === 'object' || completionProblem?.area === 'sensor') && <small className="rule-validation" role="alert">{completionProblem.message}</small>}
           {!compatibleRule(rule, visionCapabilities) && <div role="status">
             <b>Needs update</b>
             <p>This rule needs bounding boxes. Choose object detection or convert to a classification rule.</p>
@@ -172,7 +181,7 @@ export function RuleCard({
           <div className="trigger-pill">
             ↻{' '}
             {rule.mode === 'appearance'
-              ? sensorOnly ? 'When condition becomes true' : 'Once per appearance'
+              ? sensorOnly ? 'When condition becomes true' : 'Once per detection'
               : rule.mode === 'disappearance'
                 ? sensorOnly ? 'When condition becomes false' : 'When it disappears'
                 : rule.mode === 'interval'
@@ -188,7 +197,7 @@ export function RuleCard({
                   value={rule.mode}
                   onChange={(e) => patch({ mode: e.target.value as Rule['mode'] })}
                 >
-                <option value="appearance">{sensorOnly ? 'When condition becomes true' : 'Once per appearance'}</option>
+                <option value="appearance">{sensorOnly ? 'When condition becomes true' : 'Once per detection'}</option>
                   <option value="continuous">{sensorOnly ? 'While true' : 'While visible'}</option>
                   <option value="interval">Every N seconds</option>
                   <option value="disappearance">{sensorOnly ? 'When condition becomes false' : 'When object disappears'}</option>
@@ -196,7 +205,7 @@ export function RuleCard({
               </label>
               <label>
                 {sensorOnly ? 'True for (ms)' : 'Visible for (ms)'}
-                <input
+                <NumericInput
                   type="number"
                   min={0}
                   max={60000}
@@ -208,7 +217,7 @@ export function RuleCard({
               </label>
               <label>
                 Cooldown (ms)
-                <input
+                <NumericInput
                   type="number"
                   min={100}
                   max={60000}
@@ -221,7 +230,7 @@ export function RuleCard({
               {rule.mode === 'interval' && (
                 <label>
                   Interval (ms)
-                  <input
+                  <NumericInput
                     type="number"
                     min={100}
                     max={60000}
@@ -238,6 +247,7 @@ export function RuleCard({
         </div>
         <div className="actions">
           <span className="eyebrow">MAKE THIS HAPPEN</span>
+          {completionProblem?.area === 'action' && <small className="rule-validation" role="alert">{completionProblem.message}</small>}
           <div className="then-label">
             <b className="keyword coral">THEN</b>
             <span>Run these actions in order</span>
@@ -260,7 +270,7 @@ export function RuleCard({
                 <select
                   aria-label={`Action ${i + 1} type`}
                   value={capabilities.includes(a.kind) ? a.kind === 'move' && a.mode === 'timed' && ['left', 'right'].includes(a.direction) ? `turn-${a.direction}` : a.kind : ''}
-                  onChange={(e) => { const turn = e.target.value.startsWith('turn-'); updateAction(a.id, { ...makeAction(turn ? 'move' : e.target.value as ActionKind), ...(turn ? { direction: e.target.value === 'turn-left' ? 'left' as const : 'right' as const } : {}), id: a.id, enabled: a.enabled }); }}
+                  onChange={(e) => { const turn = e.target.value.startsWith('turn-'); updateAction(a.id, { ...makeAction(turn ? 'move' : e.target.value as ActionKind), ...(turn ? { direction: e.target.value === 'turn-left' ? 'left' as const : 'right' as const } : {}), id: a.id, enabled: a.enabled, returnHome: undefined }); }}
                 >
                   {!capabilities.includes(a.kind) && <option value="" disabled>Choose an action</option>}
                   {capabilities.includes('move') && <optgroup label="Driving">
@@ -296,6 +306,10 @@ export function RuleCard({
                 {a.kind === 'positionServo' && <label>Angle °
                   <NumericSlider aria-label={`Action ${i + 1} angle`} type="number" min={0} max={180} value={a.angle ?? 90}
                     onChange={e => updateAction(a.id, { angle: Math.max(0, Math.min(180, +e.target.value)) })} />
+                </label>}
+                {a.kind === 'positionServo' && <label><input type="checkbox" checked={a.returnHome ?? false}
+                  onChange={event => updateAction(a.id, { returnHome: event.target.checked })} />Return Home
+                  <small>Port {a.port ?? 1}: {homeAngleForPort(servoHome, a.port ?? 1)} degrees. Add Wait immediately after this action to hold before returning.</small>
                 </label>}
                 {(a.kind === 'beak' || a.kind === 'triLed') && (
                   <label className="color-field">
@@ -338,9 +352,9 @@ export function RuleCard({
                         onChange={e => updateAction(a.id, { steps: a.steps!.map(s => s.light === light ? { ...s, color: e.target.value } : s) })} />
                     </div>;
                   })}</div>
-                  <div className="tail-timing"><label>Step speed (ms)<input type="number" min={50} max={10000} step={50} value={a.stepDurationMs ?? 250}
+                  <div className="tail-timing"><label>Step speed (ms)<NumericInput type="number" min={50} max={10000} step={50} value={a.stepDurationMs ?? 250}
                     onChange={e => updateAction(a.id, { stepDurationMs: Math.max(50, Math.min(10000, Math.round(+e.target.value))) })} /></label>
-                  <label>Repeat (times)<input type="number" min={1} max={20} value={a.repeatCount ?? 3}
+                  <label>Repeat (times)<NumericInput type="number" min={1} max={20} value={a.repeatCount ?? 3}
                     onChange={e => updateAction(a.id, { repeatCount: Math.max(1, Math.min(20, Math.round(+e.target.value))) })} /></label>
                   </div>
                   <label><input type="checkbox" checked={a.clearPrevious ?? true} onChange={e => updateAction(a.id, { clearPrevious: e.target.checked })} />One light at a time</label>
@@ -369,7 +383,7 @@ export function RuleCard({
                           onChange={e => updateAction(a.id, { steeringSensitivity: Math.max(0, Math.min(100, +e.target.value)) })} /></label>
                         <label>Center tolerance %<NumericSlider aria-label="Center tolerance %" type="number" min={0} max={50} value={Math.round((a.centerDeadZone ?? 0.15) * 100)}
                           onChange={e => updateAction(a.id, { centerDeadZone: Math.max(0, Math.min(50, +e.target.value)) / 100 })} /></label>
-                        <label>Lost target timeout (ms)<input type="number" min={100} max={3000} step={50} value={a.lostTargetTimeoutMs ?? 750}
+                        <label>Lost target timeout (ms)<NumericInput type="number" min={100} max={3000} step={50} value={a.lostTargetTimeoutMs ?? 750}
                           onChange={e => updateAction(a.id, { lostTargetTimeoutMs: Math.max(100, Math.min(3000, +e.target.value)) })} /></label>
                       </details>
                     </>}
@@ -415,7 +429,7 @@ export function RuleCard({
                 {(['wait', 'sound'].includes(a.kind) || (['move', 'rotationServo'].includes(a.kind) && a.mode !== 'continuous' && a.mode !== 'follow')) && (
                   <label>
                     Duration (ms)
-                    <input
+                    <NumericInput
                       type="number"
                       min={0}
                       max={10000}

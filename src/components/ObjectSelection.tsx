@@ -1,3 +1,9 @@
+import type { SelectedTargetProgram } from '../core/SelectedTargetProgram';
+import { mobileSAMService } from '../core/MobileSAMService';
+import { Scan, Plus } from 'lucide-react';
+import { NumericSlider } from './NumericSlider';
+import { captureTargetReference } from './TargetReferenceCapture';
+import { migrateTargetProfiles, saveTargetView, removeTargetView, type TargetProfile } from '../core/TargetProfiles';
 import { AppearanceTracker } from '../core/AppearanceTracker';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -10,7 +16,12 @@ import { TrackedFollowControls, type TrackedFollowAccess } from './TrackedFollow
 import type { SAMPrompts } from '../core/SAMPrompts';
 import { associateSelection } from '../core/SAMAssociation';
 
-export function ObjectSelection({ camera, available, mirror, detections, visionUpdatedAt, trackingEnabled, follow, controlsContainer, savedNames = [], onSaveName, onTracking }: {
+const EMPTY_PROFILES: TargetProfile[] = [];
+const EMPTY_NAMES: string[] = [];
+export function ObjectSelection({ camera, available, mirror, detections, visionUpdatedAt, trackingEnabled, follow, controlsContainer, savedNames = EMPTY_NAMES, savedProfiles = EMPTY_PROFILES, onProfilesChange, onSaveName, onTracking, onModelStatus, profileProgram }: {
+  profileProgram?: SelectedTargetProgram;
+  onModelStatus?: (status: string) => void;
+  savedProfiles?: TargetProfile[]; onProfilesChange?: (profiles: TargetProfile[]) => void;
   onTracking?: (target: TrackedTarget | null) => void;
   savedNames?: string[]; onSaveName?: (name: string) => void;
   camera: CameraManager; available: boolean; mirror: boolean; detections: VisionResult[];
@@ -24,8 +35,27 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   const generation = useRef(0), locked = useRef(false);
   const [active, setActive] = useState(false), [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [modelStatus, setModelStatus] = useState('Loading MobileSAM…');
+  const [captureReady, setCaptureReady] = useState(false);
+  async function loadModel() {
+    setModelStatus('Loading MobileSAM…');
+    try { const sam = await mobileSAMService(); service.current = sam; await sam.load(); setModelStatus('MobileSAM ready'); }
+    catch { setModelStatus('MobileSAM unavailable. Retry in Advanced target settings.'); }
+  }
+  useEffect(() => { let mounted = true;
+    void mobileSAMService().then(async sam => { service.current = sam; await sam.load();
+      if (mounted) setModelStatus('MobileSAM ready');
+    }).catch(() => { if (mounted) setModelStatus('MobileSAM unavailable. Retry in Advanced target settings.'); });
+    return () => { mounted = false; };
+  }, []);
+  useEffect(() => { onModelStatus?.(modelStatus); }, [modelStatus, onModelStatus]);
   const [selected, setSelected] = useState<SelectedSegment | null>(null);
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(savedProfiles[0]?.label ?? savedNames[0] ?? '');
+  const [profiles, setProfiles] = useState(() => migrateTargetProfiles(savedProfiles, savedNames));
+  useEffect(() => { setProfiles(migrateTargetProfiles(savedProfiles, savedNames)); }, [savedProfiles, savedNames]);
+  const profile = profiles.find(p => p.label === displayName.trim());
+  const updateProfiles = (next: TargetProfile[]) => { setProfiles(next); onProfilesChange?.(next); };
+  const livePreview = useRef<HTMLCanvasElement>(null);
   const [mode, setMode] = useState<'positive' | 'negative' | 'box'>('positive');
   const [prompts, setPrompts] = useState<SAMPrompts>({ points: [] });
   const history = useRef<SAMPrompts[]>([]);
@@ -49,10 +79,10 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   useEffect(() => { onTracking?.(target); }, [target, onTracking]);
   useEffect(() => () => { onTracking?.(null); }, [onTracking]);
   useEffect(() => {
-    if (appearanceActive.current && target && !savedNames.includes(target.displayName ?? '')) {
+    if (appearanceActive.current && target && !savedNames.includes(target.displayName ?? '') && !profiles.some(p => p.label === target.displayName)) {
       appearanceActive.current = false; appearance.stop(); setTarget(null);
     }
-  }, [savedNames, target, appearance]);
+  }, [savedNames, profiles, target, appearance]);
   const trackedAt = useRef(-Infinity);
   const trackingCanvas = useRef<HTMLCanvasElement>(null);
   const capturedDetections = useRef<{ items: VisionResult[]; at: number;
@@ -73,6 +103,12 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   }, [detections, visionUpdatedAt, trackingEnabled, tracker]);
   useEffect(() => {
     const timer = setInterval(() => {
+      // The selection canvas is frozen; this inset reads the still-running camera stream.
+      const live = livePreview.current;
+      if (live && available && camera.frame) {
+        live.width=160; live.height=Math.max(1,Math.round(160*camera.height/camera.width));
+        live.getContext('2d')?.drawImage(camera.frame,0,0,live.width,live.height);
+      }
       if (!appearanceActive.current) { setTarget(tracker.age()); return; }
       try {
         const frame = camera.frame, version = camera.frameVersion;
@@ -99,7 +135,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     ctx.beginPath(); ctx.moveTo(target.centerX - 10, target.centerY); ctx.lineTo(target.centerX + 10, target.centerY);
     ctx.moveTo(target.centerX, target.centerY - 10); ctx.lineTo(target.centerX, target.centerY + 10); ctx.stroke();
   }, [target, camera]);
-  useEffect(() => () => { ++generation.current; service.current?.dispose(); }, []);
+  useEffect(() => () => { ++generation.current; void service.current?.clear().catch(() => {}); }, []);
   function draw(segment?: SelectedSegment, prompt = prompts) {
     const c = view.current, image = snapshot.current;
     if (!c || !image) return;
@@ -140,13 +176,13 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     setStatus('Object selected. Add it for appearance tracking without a YOLO class match. Keep the object still until tracking locks.');
   }
   function clearSelection() {
-    history.current=[]; setPrompts({points:[]}); setSelected(null); setDisplayName(''); setAssociation(null);
+    history.current=[]; setPrompts({points:[]}); setSelected(null); setAssociation(null);
     service.current?.clearSelection(); draw(undefined,{points:[]}); setStatus('Click an object · frozen frame');
   }
   async function capture() {
     if (locked.current || !camera.frame) return;
     locked.current = true; setBusy(true); setSelected(null);
-    setDisplayName(''); setPrompts({points:[]}); history.current=[]; setAssociation(null);
+    setPrompts({points:[]}); history.current=[]; setAssociation(null);
     appearanceActive.current = false; appearance.stop();
     tracker.stop(); setTarget(null);
     capturedDetections.current = { items: trackingEnabled && performance.now() - visionUpdatedAt < 2500 ? detections : [],
@@ -156,17 +192,12 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       snapshot.current ??= document.createElement('canvas');
       snapshot.current.width = camera.width; snapshot.current.height = camera.height;
       snapshot.current.getContext('2d')!.drawImage(camera.frame, 0, 0);
-      setActive(true); setStatus('MobileSAM is loading. Wait a moment before selecting an object.');
+      setCaptureReady(false); setActive(true); setStatus('Preparing image…');
       // Defer only rendering; capture itself occurs immediately on button activation.
       requestAnimationFrame(() => { if (version === generation.current) draw(undefined,{points:[]}); });
-      if (!service.current) {
-        const { MobileSAMSegmenter } = await import('../core/MobileSAMSegmenter');
-        if (version !== generation.current) return;
-        service.current = new MobileSAMSegmenter();
-      }
+      service.current ??= await mobileSAMService();
       await service.current.load();
       if (version !== generation.current) return;
-      setStatus('Preparing image…');
       await service.current.capture(snapshot.current);
       if (version === generation.current) setStatus('Click an object · frozen frame');
     } catch (e) { if (version === generation.current) { console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); } }
@@ -191,7 +222,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       const result = await service.current.refine(next);
       if (version !== generation.current) return;
       const named={...result,displayName:displayName.trim() || 'Selected object'};
-      setSelected(named); draw(named,next); retryMatch(named,false);
+      setSelected(named); draw(named,next); setStatus('View selected. Enter a label and save this view.');
     } catch (e) { if (version === generation.current) { setSelected(null); setAssociation(null); draw(undefined,next); console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); } }
     finally { if (version === generation.current) { locked.current = false; setBusy(false); } }
   }
@@ -203,12 +234,11 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   }
   async function close() {
     const version = ++generation.current;
-    const wasBusy = locked.current;
     locked.current = true; setBusy(true); setActive(false); setStatus(''); setSelected(null);
-    setDisplayName(''); setPrompts({points:[]}); history.current=[]; setAssociation(null);
+    setPrompts({points:[]}); history.current=[]; setAssociation(null);
     appearanceActive.current = false; appearance.stop();
     tracker.stop(); setTarget(null); capturedDetections.current = null;
-    if (wasBusy) service.current?.dispose(); else await service.current?.clear().catch(() => {});
+    await service.current?.clear().catch(() => {});
     if (version !== generation.current) return;
     locked.current = false; setBusy(false);
     if (snapshot.current) { snapshot.current.width = 0; snapshot.current.height = 0; }
@@ -234,49 +264,93 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     await service.current?.clear().catch(() => {});
     if (version === generation.current) { locked.current = false; setBusy(false); }
   }
-  async function addAppearanceTarget() {
-    if (!selected || !snapshot.current || busy || !camera.frame) return;
+  async function saveView() {
+    if (locked.current || !selected || !snapshot.current || busy || !displayName.trim()) return;
+    const version=++generation.current; locked.current=true;setBusy(true);
     try {
-      const name = displayName.trim() || 'Selected object';
-      tracker.stop();
-      appearance.initialize(pixels(snapshot.current, snapshot.current.width, snapshot.current.height), { ...selected, displayName: name }, mirror);
-      const next = appearance.update(pixels(camera.frame, camera.width, camera.height), performance.now(), camera.width, camera.height);
-      if (!next) { appearance.stop(); setStatus('Could not locate this appearance in the live frame. Keep the object still and capture again.'); return; }
-      onSaveName?.(name);
-      appearanceActive.current = true; lastVersion.current = camera.frameVersion;
-      trackedAt.current = appearance.capturedAt; setTarget(next); setActive(false);
-      capturedDetections.current = null;
-      setStatus('Appearance tracking  -  one active object  -  Follow must be started separately.');
-      await service.current?.clear().catch(() => {});
-    } catch (e) { appearance.stop(); appearanceActive.current = false; setTarget(null); console.warn('Object selection failed:', e); setStatus('Object selection could not finish. Capture a new frame and try again.'); }
+      const label=displayName.trim();
+      const appearance=AppearanceTracker.reference(pixels(snapshot.current,snapshot.current.width,snapshot.current.height),selected);
+      const reference=captureTargetReference(snapshot.current,selected,appearance);
+      updateProfiles(saveTargetView(profiles,label,reference));onSaveName?.(label);
+      setDisplayName(label);setActive(false);setSelected(null);capturedDetections.current=null;
+      setStatus('View saved.');
+      await service.current?.clear().catch(()=>{});
+    }catch(error){if(version===generation.current)setStatus(error instanceof Error?error.message:'View could not be saved.');}
+    finally{if(version===generation.current){locked.current=false;setBusy(false);}}
+  }
+  async function anotherView() { setCaptureReady(true); await close(); setStatus('Reposition the target, then Capture frame.'); }
+  function startProfileTracking(): TrackedTarget | null {
+    if(!profile?.references.length||active||busy||!available||!camera.frame)return null;
+    try {
+      tracker.stop();const frame=pixels(camera.frame,camera.width,camera.height);
+      appearance.initializeProfile(profile,mirror,frame.width,frame.height);
+      const next=appearance.update(frame,performance.now(),camera.width,camera.height);
+      if(!next){appearance.stop();setTarget(null);setStatus('No confident match. Adjust the view or capture another reference.');return null;}
+      appearanceActive.current=true;lastVersion.current=camera.frameVersion;
+      trackedAt.current=appearance.capturedAt;setTarget(next);
+      setStatus('');return next;
+    }catch(error){appearance.stop();appearanceActive.current=false;setTarget(null);setStatus(error instanceof Error?error.message:'Tracking could not start.');return null;}
+  }
+  const sourceOwner=useRef(Symbol('MobileSAM profile source'));
+  useEffect(() => {
+    if(!profileProgram)return;
+    const owner=sourceOwner.current;
+    profileProgram.setSource(owner,{profile,canMatch:()=>available && !active && !busy && !!camera.frame,match:startProfileTracking});
+    return () => profileProgram.clearSource(owner);
+  },[profileProgram,profile,available,active,busy,camera,mirror]);
+  function stopProfileTracking() {appearanceActive.current=false;appearance.stop();tracker.stop();setTarget(null);}
+  function removeView(id:string){stopProfileTracking();updateProfiles(removeTargetView(profiles,displayName.trim(),id));setStatus('View removed.');}
+  function openCapture() {
+    setCaptureReady(true); setStatus('');
+    const drawer = controlsContainer?.closest('details'); if (drawer) drawer.open = true;
   }
   const controls = <div className={`selection-controls${controlsContainer ? ' selection-editor' : ''}`}>
-      <button disabled={!available || busy} onClick={() => void capture()}>{active ? 'Capture new frame' : 'Select Object'}</button>
-      {active && <button onClick={close}>Back to live</button>}
-      {active && <>
-        <label>Selection mode <select aria-label="Selection mode" disabled={busy} value={mode} onChange={e=>setMode(e.target.value as typeof mode)}>
+    <label className="target-name">Target name <input type="text" aria-label="Target label" maxLength={80} value={displayName}
+      disabled={busy || !!profile?.references.length} placeholder="Name this target"
+      onChange={e => { setDisplayName(e.target.value); if (selected) setSelected({...selected,displayName:e.target.value.trim() || 'Selected object'}); }} /></label>
+    {!active && captureReady && <div className="selection-actions">
+      <button disabled={!available || !camera.frame || busy || modelStatus !== 'MobileSAM ready'} onClick={() => void capture()}>Capture frame</button>
+    </div>}
+    {active && <div className="selection-actions">
+      <button disabled={busy || !history.current.length} onClick={() => { const previous=history.current.pop(); if(previous) void refine(previous,true); }}>Undo point</button>
+      <button disabled={busy} onClick={clearSelection}>Clear</button>
+      <button onClick={() => { setCaptureReady(false); void close(); }}>Retake</button>
+      <button className="primary" disabled={busy || !selected || !displayName.trim()} onClick={() => void saveView()}>Save view</button>
+    </div>}
+    {!active && <>
+      <div className="target-profile-views">
+        <strong>Reference views</strong>
+        {profile?.references.map((reference,index) => <div className="target-reference" key={reference.id} data-testid="reference-view">
+          <img src={reference.crop.image} alt={`${profile.label}: view ${index+1}`} />
+          <button aria-label={`Remove view ${index+1}`} disabled={busy} onClick={() => removeView(reference.id)}>&times;</button>
+        </div>)}
+        <button className="target-add-view" aria-label="Capture another view" title="Capture another view" disabled={busy || !available} onClick={() => void anotherView()}><Plus size={18}/></button>
+      </div>
+      <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && !target?.targetLost} onClick={startProfileTracking}>Track target</button>
+      {target && <button onClick={() => { stopProfileTracking();setStatus('Tracking stopped.'); }}>Stop tracking</button>}
+    </>}
+    <span role="status" className="target-live-status">{!active && target
+      ? `${target.displayName} · Match ${Math.round(target.trackingConfidence*100)}% · ${target.targetLost ? 'Lost' : target.state === 'TRACKING' ? 'Tracking' : 'Uncertain'}`
+      : modelStatus !== 'MobileSAM ready' ? modelStatus : status || modelStatus}</span>
+    <details className="target-advanced"><summary>Advanced target settings</summary>
+      <div className="target-advanced-body">
+        {!active && <label>Target <select aria-label="Target profile" value={profile?.label ?? ''} disabled={busy} onChange={e => {setCaptureReady(false);void close();setDisplayName(e.target.value);}}>
+          <option value="">New target</option>{profiles.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+        </select></label>}
+        {active && <label>Selection mode <select aria-label="Selection mode" disabled={busy} value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
           <option value="positive">Add to object</option><option value="negative">Remove from object</option><option value="box">Box Select</option>
-        </select></label>
-        <button disabled={busy || !history.current.length} onClick={()=>{const previous=history.current.pop();if(previous)void refine(previous,true);}}>Undo point</button>
-        <button disabled={busy} onClick={clearSelection}>Clear selection</button>
-      </>}
-      {active && selected && <>
-        <label>Target name <input list="saved-target-names" maxLength={80} value={displayName} disabled={busy} placeholder="Selected object"
-          onChange={e=>{setDisplayName(e.target.value);setSelected({...selected,displayName:e.target.value.trim()||'Selected object'});}} /></label>
-        <datalist id="saved-target-names">{savedNames.map(name=><option key={name} value={name}/>)}</datalist>
-        <button disabled={busy || !available || (!savedNames.includes(displayName.trim() || 'Selected object') && savedNames.length >= 10)} onClick={()=>void addAppearanceTarget()}>Add object & track</button>
-        <button disabled={busy} onClick={()=>retryMatch()}>Retry tracking match</button>
-        <button disabled={busy || !association} onClick={lockTarget}>Lock target</button>
-        <small>Name: {displayName.trim()||'Selected object'} · Positive points: {prompts.points.filter(p=>p.label===1).length} · Negative points: {prompts.points.filter(p=>p.label===0).length} · YOLO match: {association?.label??'none'}</small>
-      </>}
-      {target && <button onClick={close}>Stop Tracking</button>}
-      {!active && target && <span role="status">{target.targetLost ? 'TARGET LOST' : target.state === 'TRACKING' ? 'TARGET LOCKED' : 'TARGET UNCERTAIN'} · Tracking: {target.displayName} · Detector: {target.detectorLabel}
-        {' · '}X error {target.horizontalError.toFixed(2)}</span>}
-      {status && <span role="status">{status}</span>}
-      {!active && !target && !status && <small className="muted">Select an object in the camera to use Selected Target.</small>}
-      {selected && <small>{selected.area.toLocaleString()} pixels selected</small>}
-    </div>;
+        </select></label>}
+        {profile && <label>Match threshold %<NumericSlider aria-label="Target match threshold" min={1} max={100} step={1} value={Math.round(profile.matchThreshold*100)} disabled={busy || appearanceActive.current}
+          onChange={e => updateProfiles(profiles.map(p => p.label===profile.label ? {...p,matchThreshold:+e.target.value/100} : p))} /></label>}
+        {!active && <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && !target?.targetLost} onClick={startProfileTracking}>Retry match</button>}
+        {profile && <button disabled={busy} onClick={() => {stopProfileTracking();updateProfiles(profiles.map(p => p.label===profile.label ? {...p,references:[]} : p));setStatus('Profile views cleared.');}}>Clear target profile</button>}
+        {modelStatus.includes('unavailable') && <button onClick={() => void loadModel()}>Retry MobileSAM loading</button>}
+        <small>{selected ? `Selected area: ${selected.area} pixels · ${prompts.points.length} points` : 'Save project to keep reference views.'}</small>
+      </div>
+    </details>
+  </div>;
   return <>
+    {!active && <button className="select-target-overlay" aria-label="Select target" title="Select target" disabled={!available || busy} onClick={openCapture}><Scan size={16}/><span>Select target</span></button>}
     {!active && target && <canvas ref={trackingCanvas} className="tracking-overlay" aria-label="Tracked target outline and center" />}
     {active && <canvas ref={view} className="selection-frame" aria-label="Frozen frame: click an object to segment"
       style={{ transform: mirror ? 'scaleX(-1)' : undefined, cursor: busy ? 'wait' : 'crosshair',touchAction:'none' }} onClick={select}
@@ -287,8 +361,10 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       onPointerUp={e=>{const a=drag.current,p=pointFrom(e);drag.current=null;if(!a||!p)return;
         if(Math.abs(a.x-p.x)>=3&&Math.abs(a.y-p.y)>=3) void refine({...prompts,box:{x:Math.min(a.x,p.x),y:Math.min(a.y,p.y),width:Math.abs(a.x-p.x),height:Math.abs(a.y-p.y)}});
         else draw(selected??undefined);}} />}
+    {active && <div className="snapshot-live-inset" aria-label="Live camera preview"><span>LIVE</span><canvas ref={livePreview} style={{transform:mirror?'scaleX(-1)':undefined}} /></div>}
     {controlsContainer ? createPortal(controls, controlsContainer) : null}
+    {profileProgram && <TrackedFollowControls program={profileProgram} target={active ? null : target} capturedAt={trackedAt.current} timeout={tracker.lossTimeoutMs} hidden={active} container={controlsContainer} />}
     {follow && <TrackedFollowControls target={active ? null : target} capturedAt={trackedAt.current} timeout={tracker.lossTimeoutMs}
-      access={{ ...follow, available: follow.available && available && (appearanceActive.current || trackingEnabled) && !active }} />}
+      compact hidden={active} access={{ ...follow, available: follow.available && available && (appearanceActive.current || trackingEnabled) && !active }} />}
   </>;
 }

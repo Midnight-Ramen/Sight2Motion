@@ -1,3 +1,4 @@
+import { NumericInput } from './NumericInput';
 import {VisionRoadSigns} from './VisionRoadSigns';
 import type {RoadSignVision} from '../core/RoadSigns';
 import type { SensorProvider } from '../core/SensorProvider';
@@ -51,10 +52,10 @@ export function NavigationControls({ engine, robot, roadVision, lineSensorProvid
  const calibrated=FINCH_EFFECTIVE_TRACK_WIDTH_CM!==null&&FINCH_EFFECTIVE_TRACK_WIDTH_CM>0;
  return <div className="navigation-controls">
   <h3>Navigation</h3>
-  <div><label>Drive distance <input aria-label="Drive distance cm" type="number" min={1} max={200} value={distance} onChange={e=>setDistance(+e.target.value)} /> cm</label>
+  <div><label>Drive distance <NumericInput aria-label="Drive distance cm" type="number" min={1} max={200} value={distance} onChange={e=>setDistance(+e.target.value)} /> cm</label>
    <button disabled={disabled||emergencyInvalid} onClick={()=>void controller.start({kind:'distance',direction:'forward',amount:distance},speed,emergency)}>Forward</button>
    <button disabled={disabled} onClick={()=>void controller.start({kind:'distance',direction:'backward',amount:distance},speed)}>Backward</button></div>
-  <div><label>Turn <input aria-label="Turn angle degrees" type="number" min={1} max={360} value={angle} onChange={e=>setAngle(+e.target.value)} /> °</label>
+  <div><label>Turn <NumericInput aria-label="Turn angle degrees" type="number" min={1} max={360} value={angle} onChange={e=>setAngle(+e.target.value)} /> °</label>
    <button disabled={disabled||!calibrated} onClick={()=>void controller.start({kind:'turn',direction:'left',amount:angle},speed)}>Turn Left</button>
    <button disabled={disabled||!calibrated} onClick={()=>void controller.start({kind:'turn',direction:'right',amount:angle},speed)}>Turn Right</button></div>
   <div><button disabled={disabled||!recording.origin||!recording.segments.length} onClick={()=>void controller.returnToBase(recording,speed)}>Return to Base</button><small>Experimental</small>
@@ -62,7 +63,7 @@ export function NavigationControls({ engine, robot, roadVision, lineSensorProvid
   {!calibrated&&<small>Turn calibration required</small>}
   <h3>Safety</h3>
   <div><label><input type="checkbox" checked={emergencyEnabled} disabled={controller.active} onChange={e=>setEmergencyEnabled(e.target.checked)} /> Emergency braking</label>
-   <input aria-label="Emergency stop distance cm" type="number" min={0} value={emergencyDistance} disabled={controller.active||!emergencyEnabled} onChange={e=>setEmergencyDistance(+e.target.value)} /> cm</div>
+   <NumericInput aria-label="Emergency stop distance cm" type="number" min={0} value={emergencyDistance} disabled={controller.active||!emergencyEnabled} onChange={e=>setEmergencyDistance(+e.target.value)} /> cm</div>
   <div className="behavior-heading"><h3>Assists &amp; Autonomy</h3><button aria-expanded={adding} onClick={()=>setAdding(!adding)}>+ Add behavior</button></div>
   {adding&&<div className="behavior-picker"><label>Add behavior<select aria-label="Add behavior" value="" onChange={e=>{if(e.target.value)setBehaviors(items=>[...items,e.target.value]);setAdding(false);}}>
    <option value="">Choose a behavior…</option>
@@ -73,14 +74,14 @@ export function NavigationControls({ engine, robot, roadVision, lineSensorProvid
   {behaviors.includes('Drive Until')&&<div className="behavior-card" aria-label="Drive Until controls"><header><strong>Drive Until</strong><button aria-label="Hide Drive Until" title="Hide controls only" onClick={()=>hideBehavior('Drive Until')}>×</button></header><span>Distance sensor</span>
    <select aria-label="Drive Until operator" value={untilOperator} onChange={e=>setUntilOperator(e.target.value as DriveUntilCondition['operator'])}>
     <option value="lessThan">&lt;</option><option value="lessThanOrEqual">≤</option><option value="greaterThan">&gt;</option><option value="greaterThanOrEqual">≥</option>
-   </select><input aria-label="Drive Until distance cm" type="number" min={0} value={untilValue} onChange={e=>setUntilValue(+e.target.value)} /> cm
+   </select><NumericInput aria-label="Drive Until distance cm" type="number" min={0} value={untilValue} onChange={e=>setUntilValue(+e.target.value)} /> cm
    <label>Speed %<NumericSlider aria-label="Drive Until speed" min={1} max={100} step={1} value={untilSpeed} onChange={e=>setUntilSpeed(+e.target.value)} /></label>
    <button disabled={!enabled||controller.active||!encoderPair(sensors,performance.now())||!distanceFresh||emergencyInvalid||!Number.isFinite(untilValue)||untilValue<0||untilSpeed<=0||untilSpeed>100}
     onClick={()=>void controller.driveUntil({operator:untilOperator,value:untilValue},untilSpeed,emergency)}>Start Drive Until</button>
   </div>}
   {behaviors.includes('Keep Distance')&&<div className="behavior-card" aria-label="Keep Distance controls"><header><strong>Keep Distance</strong><button aria-label="Hide Keep Distance" title="Hide controls only" onClick={()=>hideBehavior('Keep Distance')}>×</button></header>
-   <label>Target <input aria-label="Keep Distance target cm" type="number" min={1} value={keepTarget} onChange={e=>setKeepTarget(+e.target.value)} /> cm</label>
-   <label>Tolerance ±<input aria-label="Keep Distance tolerance cm" type="number" min={0} step={.5} value={keepTolerance} onChange={e=>setKeepTolerance(+e.target.value)} /> cm</label>
+   <label>Target <NumericInput aria-label="Keep Distance target cm" type="number" min={1} value={keepTarget} onChange={e=>setKeepTarget(+e.target.value)} /> cm</label>
+   <label>Tolerance ±<NumericInput aria-label="Keep Distance tolerance cm" type="number" min={0} step={.5} value={keepTolerance} onChange={e=>setKeepTolerance(+e.target.value)} /> cm</label>
    <label>Speed %<NumericSlider aria-label="Keep Distance speed" min={1} max={100} step={1} value={keepSpeed} onChange={e=>setKeepSpeed(+e.target.value)} /></label>
    <button disabled={!enabled||controller.active||!encoderPair(sensors,performance.now())||!distanceFresh||
     !Number.isFinite(keepTarget)||keepTarget<=0||!Number.isFinite(keepTolerance)||keepTolerance<0||keepTolerance>=keepTarget||!Number.isFinite(keepSpeed)||keepSpeed<=0||keepSpeed>100}

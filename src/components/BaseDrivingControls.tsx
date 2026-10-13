@@ -1,3 +1,5 @@
+import type { SelectedTargetProgram } from '../core/SelectedTargetProgram';
+import { NumericInput } from './NumericInput';
 import { AvoidanceTurnDiagnostics, AVOID_TURN_POWER } from '../core/AvoidanceTurnDiagnostics';
 import { FINCH_EFFECTIVE_TRACK_WIDTH_CM } from '../core/FinchGeometry';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
@@ -15,7 +17,8 @@ import { ObstacleAvoidance, OBSTACLE_AVOIDANCE, type AvoidancePhase } from '../c
 import { NavigationEncoderBarrier } from '../core/NavigationEncoderBarrier';
 import { NumericSlider } from './NumericSlider';
 
-export function BaseDrivingControls({ engine, robot, sensors, provider, available, rulesRunning, speed, recording, cancelRef, coordinator, ruleSensors, onActiveChange, onProgramChange }: {
+export function BaseDrivingControls({ engine, robot, sensors, provider, available, rulesRunning, speed, recording, cancelRef, coordinator, selectedTargetProgram, ruleSensors, onActiveChange, onProgramChange }: {
+  selectedTargetProgram?: SelectedTargetProgram;
   engine: ActionEngine; robot: RobotAdapter; sensors: SensorState; provider?: SensorProvider;
   available: boolean; rulesRunning: boolean; speed: number; recording: EncoderRecording; cancelRef: MutableRefObject<(() => void) | null>;
   coordinator: BaseBehaviorCoordinator; ruleSensors: SensorDescriptor[]; onActiveChange: (active: boolean) => void; onProgramChange: () => void;
@@ -104,6 +107,7 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
   const cancel = () => {
     suspending.current = true;
     avoidance.cancel(); avoidanceNavigation.cancel();
+    const selectedStopping = selectedTargetProgram?.suspend();
     reactionAbort.current?.abort(); reactionAbort.current = null;
     const wasNavigating = controller.active;
     controller.cancel();
@@ -111,6 +115,7 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
     cruise.current = false;
     suspending.current = false;
     if (wasCruise || wasNavigating) return engine.stop();
+    return selectedStopping;
   };
   cancelRef.current = () => { coordinator.disarm(); cancel(); };
   coordinator.safety = () => coordinator.avoiding && !avoidance.movingForward
@@ -121,7 +126,7 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
       if (!safe && coordinator.avoiding) avoidance.cancel(!fresh ? 'stale distance during forward bypass' : 'emergency braking: unsafe forward clearance');
       return safe;
     })();
-  useEffect(() => { onActiveChange(controller.active || cruise.current || avoidanceNavigation.active); }, [status, controller, onActiveChange]);
+  useEffect(() => { onActiveChange(controller.active || cruise.current || avoidanceNavigation.active || !!selectedTargetProgram?.active); }, [status, controller, onActiveChange, selectedTargetProgram?.active]);
   useEffect(() => { turnDiagnostics.update(encoderPair(sensors, performance.now())); void controller.sensorsUpdated(); avoidance.sensorsUpdated(); encoderBarrier.sensorsUpdated(); void avoidanceNavigation.sensorsUpdated(); }, [sensors, controller, avoidance, avoidanceNavigation, encoderBarrier, turnDiagnostics]);
   const priorityKey = ruleSensors.map(sensor => sensor.id).join(',');
   const avoidanceMonitoring = avoidancePhase !== 'IDLE' && avoidancePhase !== 'COMPLETE' && avoidancePhase !== 'ABORTED';
@@ -134,29 +139,32 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
     });
     return () => provider?.setPriority([]);
   }, [status, controller, provider, priorityKey, emergency, avoidanceMonitoring, avoidance, avoidanceNavigation, encoderBarrier, turnDiagnostics]);
-  useEffect(() => { if (!available) { coordinator.disarm(); cancel(); } }, [available, coordinator]);
+  useEffect(() => { if (!available) { selectedTargetProgram?.end(); coordinator.disarm(); cancel(); } }, [available, coordinator]);
   useEffect(() => {
-    const stop = () => { coordinator.disarm(); cancel(); };
+    const stop = () => { selectedTargetProgram?.end(); coordinator.disarm(); cancel(); };
     const hidden = () => { if (document.hidden) stop(); };
     window.addEventListener('blur', stop); document.addEventListener('visibilitychange', hidden);
     return () => { stop(); cancelRef.current = null; coordinator.safety = () => true; coordinator.program = undefined; coordinator.assist = undefined; window.removeEventListener('blur', stop); document.removeEventListener('visibilitychange', hidden); };
   }, [controller, coordinator]);
   const startBase = () => {
     if (mode === 'None') { coordinator.disarm(); return; }
+    if (mode === 'Follow selected target' && !selectedTargetProgram?.begin()) { setStatus('No confident target match.');return false; }
     coordinator.arm({
       suspend: cancel,
       safe: () => latest.current.available && !document.hidden && emergencySafe() && ruleSensorsFresh() &&
         (!coordinator.avoiding || freshDistance(latest.current.sensors, performance.now()) !== null) &&
+        (mode !== 'Follow selected target' || !!selectedTargetProgram?.safe) &&
         (mode !== 'Line Follow' || !!freshLines(latest.current.sensors, performance.now())) &&
         (mode !== 'Keep Distance' || (!!encoderPair(latest.current.sensors, performance.now()) && freshDistance(latest.current.sensors, performance.now()) !== null)),
       start: async override => {
-        const speed = reactionSpeed(baseSpeed, override);
+        const speed = reactionSpeed(mode === 'Follow selected target' ? selectedTargetProgram!.settings.baseSpeed : baseSpeed, override);
         if (override?.kind === 'veerLeft' || override?.kind === 'veerRight') {
           const abort = new AbortController(); reactionAbort.current = abort; cruise.current = true;
           const ok = await startVeer(engine, robot, speed, override.kind, abort.signal);
           setStatus(`${override.kind === 'veerLeft' ? 'Steer Left' : 'Steer Right'} active`);
           return ok;
         }
+        if (mode === 'Follow selected target') return selectedTargetProgram!.start(speed);
         if (mode === 'Line Follow') return controller.lineFollow(speed, lineEvent, true);
         if (mode === 'Keep Distance') return controller.keepDistance(target, tolerance, speed);
         if (mode !== 'Cruise Forward') return false;
@@ -166,45 +174,58 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
       },
     });
   };
-  const changeMode = (value: string) => { coordinator.disarm(); cancel(); setMode(value); setStatus(''); };
-  const busy = controller.active || cruise.current || coordinator.avoiding;
+  const changeMode = (value: string) => { selectedTargetProgram?.end(); coordinator.disarm(); cancel(); setMode(value); setStatus(''); };
+  useEffect(() => {
+    if(mode === 'Follow selected target' && !selectedTargetProgram?.configured) changeMode('None');
+  }, [mode, selectedTargetProgram?.configured]);
+  const busy = controller.active || cruise.current || coordinator.avoiding || !!selectedTargetProgram?.active;
   const blocked = !available || busy || !emergencySafe();
   const ready = available && !busy && emergencySafe() && ruleSensorsFresh() && (mode === 'None' ||
-    (Number.isFinite(baseSpeed) && baseSpeed >= 1 && baseSpeed <= 100 &&
+    (mode === 'Follow selected target' ? !!selectedTargetProgram?.ready : Number.isFinite(baseSpeed) && baseSpeed >= 1 && baseSpeed <= 100 &&
       (mode !== 'Line Follow' || !!freshLines(sensors, performance.now())) &&
       (mode !== 'Keep Distance' || (!!encoderPair(sensors, performance.now()) && freshDistance(sensors, performance.now()) !== null &&
         Number.isFinite(target) && target > 0 && Number.isFinite(tolerance) && tolerance >= 0 && tolerance < target))));
-  coordinator.program = { selected: mode !== 'None', ready: () => ready, start: startBase };
+  coordinator.program = { selected: mode !== 'None', requiresCamera: mode === 'Follow selected target', ready: () => ready, start: startBase };
   useEffect(() => { onProgramChange(); }, [ready, mode, onProgramChange]);
   const lineValues = freshLines(sensors, performance.now());
-  return <section className="base-driving" aria-label="Base driving">
-    <div className="base-heading"><label>Base driving behavior <select aria-label="Base driving behavior" value={mode} disabled={rulesRunning || coordinator.enabled} onChange={event => changeMode(event.target.value)}>
-      {['None', 'Cruise Forward', 'Line Follow', 'Keep Distance'].map(value => <option key={value}>{value}</option>)}
+  const stripStatus = (mode === 'Follow selected target' ? selectedTargetProgram?.status || (selectedTargetProgram?.active ? `Following ${selectedTargetProgram.label}` : '') : status) || (!available ? 'Robot disconnected'
+    : (emergency || mode === 'Keep Distance') && freshDistance(sensors, performance.now()) === null ? 'Distance unavailable'
+    : !emergencySafe() ? 'Emergency braking'
+    : mode === 'Line Follow' && !lineValues ? 'Line unavailable'
+    : mode === 'Keep Distance' && !encoderPair(sensors, performance.now()) ? 'Wheel readings unavailable' : '');
+  return <section className="base-driving" aria-label="Base driving" data-selected-target={mode === 'Follow selected target' ? 'true' : undefined}>
+    <div className="base-strip"><div className="base-heading"><label>Base behavior <select aria-label="Base driving behavior" value={mode} disabled={rulesRunning || coordinator.enabled} onChange={event => changeMode(event.target.value)}>
+      {['None', 'Cruise Forward', 'Line Follow', 'Keep Distance', ...(selectedTargetProgram?.configured ? ['Follow selected target'] : [])].map(value => <option key={value}>{value}</option>)}
     </select></label></div>
-    {mode !== 'None' && <div className="base-settings">
-      <label>Speed %<NumericSlider aria-label="Base driving speed" min={1} max={100} value={baseSpeed} disabled={busy || coordinator.enabled || rulesRunning} onChange={event => setBaseSpeed(+event.target.value)} /></label>
+    {mode === 'Follow selected target' && <div className="base-settings"><label>Speed<NumericSlider aria-label="Selected target Follow speed" min={0} max={50} value={selectedTargetProgram!.settings.baseSpeed} disabled={busy || coordinator.enabled || rulesRunning} onChange={event => selectedTargetProgram!.configure({...selectedTargetProgram!.settings,baseSpeed:+event.target.value})} /></label></div>}
+    {mode !== 'None' && mode !== 'Follow selected target' && <div className="base-settings">
+      <label>Speed<NumericSlider aria-label="Base driving speed" min={1} max={100} value={baseSpeed} disabled={busy || coordinator.enabled || rulesRunning} onChange={event => setBaseSpeed(+event.target.value)} /></label>
+    </div>}
+    {(mode === 'Line Follow' || mode === 'Keep Distance') && <details className="base-more-settings"><summary>Settings</summary><div>
       {mode === 'Line Follow' && <label>When both sensors see black<select aria-label="Line marker action" disabled={busy || coordinator.enabled || rulesRunning} value={lineEvent} onChange={event => setLineEvent(event.target.value as LineEventMode)}>
         <option value="stop">Stop</option><option value="continue">Continue</option><option value="left">Turn Left</option><option value="right">Turn Right</option>
       </select><small aria-label="Line Follow readings">L: {lineValues?.[0] ?? '—'} R: {lineValues?.[1] ?? '—'} · {lineValues ? lineDirection(...lineValues) : '—'}</small></label>}
-      {mode === 'Keep Distance' && <><label>Target <input aria-label="Keep Distance target cm" type="number" min={1} disabled={busy || coordinator.enabled || rulesRunning} value={target} onChange={event => setTarget(+event.target.value)} /> cm</label>
-        <label>Tolerance ±<input aria-label="Keep Distance tolerance cm" type="number" min={0} disabled={busy || coordinator.enabled || rulesRunning} value={tolerance} onChange={event => setTolerance(+event.target.value)} /> cm</label></>}
-    </div>}
+      {mode === 'Keep Distance' && <><label>Target <NumericInput aria-label="Keep Distance target cm" type="number" min={1} disabled={busy || coordinator.enabled || rulesRunning} value={target} onChange={event => setTarget(+event.target.value)} /> cm</label>
+        <label>Tolerance ±<NumericInput aria-label="Keep Distance tolerance cm" type="number" min={0} disabled={busy || coordinator.enabled || rulesRunning} value={tolerance} onChange={event => setTolerance(+event.target.value)} /> cm</label></>}
+    </div></details>}
     <div className="navigation-controls">
-      <h3>Safety</h3><div><label><input type="checkbox" checked={emergency} disabled={busy || coordinator.enabled || rulesRunning} onChange={event => setEmergency(event.target.checked)} />Emergency braking</label>
-        <input aria-label="Emergency stop distance cm" type="number" min={0} disabled={busy || coordinator.enabled || rulesRunning || !emergency} value={emergencyDistance} onChange={event => setEmergencyDistance(+event.target.value)} /> cm</div>
-      <div hidden style={{ display: 'none' }}>
-      <h3>Navigation</h3><div><label>Drive distance <input aria-label="Drive distance cm" type="number" min={1} max={200} value={distance} onChange={event => setDistance(+event.target.value)} /> cm</label>
+      <div className="base-emergency"><label><input type="checkbox" checked={emergency} disabled={busy || coordinator.enabled || rulesRunning} onChange={event => setEmergency(event.target.checked)} />Emergency braking</label>
+        <NumericInput aria-label="Emergency stop distance cm" type="number" min={0} disabled={busy || coordinator.enabled || rulesRunning || !emergency} value={emergencyDistance} onChange={event => setEmergencyDistance(+event.target.value)} /> cm</div>
+    </div>
+    {stripStatus && <small className="base-strip-status" role="status" title={stripStatus}>{stripStatus}</small>}
+    </div>
+    <div hidden style={{ display: 'none' }}>
+      <h3>Navigation</h3><div><label>Drive distance <NumericInput aria-label="Drive distance cm" type="number" min={1} max={200} value={distance} onChange={event => setDistance(+event.target.value)} /> cm</label>
         <button disabled={blocked || rulesRunning || coordinator.enabled || !encoderPair(sensors, performance.now())} onClick={() => void controller.start({ kind: 'distance', direction: 'forward', amount: distance }, speed, emergency ? emergencyDistance : undefined)}>Forward</button>
         <button disabled={blocked || rulesRunning || coordinator.enabled || !encoderPair(sensors, performance.now())} onClick={() => void controller.start({ kind: 'distance', direction: 'backward', amount: distance }, speed)}>Backward</button></div>
-      <div><label>Turn <input aria-label="Turn angle degrees" type="number" min={1} max={360} value={angle} onChange={event => setAngle(+event.target.value)} /> °</label>
+      <div><label>Turn <NumericInput aria-label="Turn angle degrees" type="number" min={1} max={360} value={angle} onChange={event => setAngle(+event.target.value)} /> °</label>
         {(['left', 'right'] as const).map(direction => <button key={direction} disabled={blocked || rulesRunning || coordinator.enabled || !FINCH_EFFECTIVE_TRACK_WIDTH_CM || !encoderPair(sensors, performance.now())} onClick={() => void controller.start({ kind: 'turn', direction, amount: angle }, speed)}>Turn {direction === 'left' ? 'Left' : 'Right'}</button>)}</div>
       <div><button disabled={blocked || rulesRunning || coordinator.enabled || !encoderPair(sensors, performance.now()) || !recording.origin || !recording.segments.length} onClick={() => void controller.returnToBase(recording, speed)}>Return to Base</button><small>Experimental</small></div>
       <details><summary>Drive Until</summary><div><select aria-label="Drive Until operator" value={untilOperator} onChange={event => setUntilOperator(event.target.value as typeof untilOperator)}><option value="lessThan">&lt;</option><option value="lessThanOrEqual">≤</option><option value="greaterThan">&gt;</option><option value="greaterThanOrEqual">≥</option></select>
-        <input aria-label="Drive Until distance cm" type="number" min={0} value={untilValue} onChange={event => setUntilValue(+event.target.value)} /> cm
+        <NumericInput aria-label="Drive Until distance cm" type="number" min={0} value={untilValue} onChange={event => setUntilValue(+event.target.value)} /> cm
         <label>Speed %<NumericSlider aria-label="Drive Until speed" min={1} max={100} value={untilSpeed} onChange={event => setUntilSpeed(+event.target.value)} /></label>
         <button disabled={blocked || rulesRunning || coordinator.enabled || !encoderPair(sensors, performance.now()) || freshDistance(sensors, performance.now()) === null} onClick={() => void controller.driveUntil({ operator: untilOperator, value: untilValue }, untilSpeed, emergency ? emergencyDistance : undefined)}>Start Drive Until</button></div></details>
       </div>
-    </div>
     {avoidancePhase !== 'IDLE' && <small aria-label="Avoidance phase">Avoidance: {avoidancePhase}{avoidanceAbort ? ` · Abort: ${avoidanceAbort} · During: ${avoidance.failedPhase ?? 'unknown'}` : ''}</small>}
     {turnDiagnostics.records.length > 0 && <details className="avoidance-turn-diagnostics"><summary>Avoidance turn diagnostics</summary>
       {turnDiagnostics.records.map((turn, index) => <small key={index} style={{ display: 'block' }} aria-label={`Avoidance turn ${turn.phase}`}>
@@ -220,6 +241,6 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
       {' · '}Encoder age L/R: {stallSnapshot.encoderAgeMs.map(value => Math.round(value)).join(' / ')} ms
       {' · '}No progress L/R: {stallSnapshot.idleMs.map(value => Math.round(value)).join(' / ')} ms
     </small>}
-    <small role="status">{status || (ready ? 'Ready to run' : 'Check connection and sensor readings')}{coordinator.enabled && !busy && !coordinator.avoiding ? ' · Base paused for rule reaction' : ''}</small>
+
   </section>;
 }

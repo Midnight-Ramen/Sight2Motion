@@ -1,3 +1,4 @@
+import { migrateTargetProfiles, parseTargetProfiles } from './TargetProfiles';
 import { DERIVED_SENSORS, isDerivedSensor } from './RuleSensors';
 import { actionDefinitions, validTailSequence, ruleNeedsVision, type Action, type Project } from './types';
 import { normalizeTeachableMachineUrl } from './TeachableMachineUrl';
@@ -15,6 +16,7 @@ export function parseProject(text: string): Project {
   if (
     !obj(p) ||
     p.version !== 1 ||
+    (p.servoHome !== undefined && (!obj(p.servoHome) || !Number.isInteger(p.servoHome.port) || !number(p.servoHome.port, 1, 4) || !number(p.servoHome.angle, 0, 180))) ||
     (p.mirrorHorizontal !== undefined && typeof p.mirrorHorizontal !== 'boolean') ||
     (p.cameraSource !== undefined && !['local', 'network'].includes(String(p.cameraSource))) ||
     (p.networkCameraUrl !== undefined && typeof p.networkCameraUrl !== 'string') ||
@@ -90,6 +92,7 @@ export function parseProject(text: string): Project {
           (!Number.isInteger(a.port) || !number(a.port, 1, a.kind === 'singleLed' ? 3 : a.kind === 'triLed' ? 2 : 4))) ||
         (a.kind === 'singleLed' && !number(a.brightness, 0, 100)) ||
         (a.kind === 'positionServo' && !number(a.angle, 0, 180)) ||
+        (a.returnHome !== undefined && (a.kind !== 'positionServo' || typeof a.returnHome !== 'boolean')) ||
         (a.kind === 'rotationServo' && !['forward', 'backward'].includes(String(a.direction))) ||
         (a.mode !== undefined && !['timed', 'continuous', 'follow'].includes(String(a.mode))) ||
         (a.mode === 'follow' && (a.kind !== 'move' || p.robotType !== 'finch' ||
@@ -118,6 +121,9 @@ export function parseProject(text: string): Project {
   if (p.customObjects !== undefined && (!Array.isArray(p.customObjects) || p.customObjects.length > 10 ||
     p.customObjects.some(n => typeof n !== 'string' || !n.trim() || n.length > 80)))
     throw new Error('Custom object names are not valid.');
+  const profiles = p.targetProfiles === undefined ? undefined : parseTargetProfiles(p.targetProfiles);
+  const targetProfiles = migrateTargetProfiles(profiles, (p.customObjects ?? []) as string[]);
+  if (targetProfiles.length > 10) throw new Error('Too many selected targets.');
   const valid = p as unknown as Project;
   const teachableMachineUrl = valid.teachableMachineUrl ? normalizeTeachableMachineUrl(valid.teachableMachineUrl) : undefined;
   // Preserve every referenced class, including legacy projects with more than ten objects.
@@ -126,13 +132,15 @@ export function parseProject(text: string): Project {
   // Keep only our schema: extra imported fields (including media) are discarded.
   return {
     version: 1,
+    ...(targetProfiles.length ? { targetProfiles } : {}),
+    ...(valid.servoHome ? { servoHome: { port: valid.servoHome.port, angle: valid.servoHome.angle } } : {}),
     cameraSource: valid.cameraSource ?? 'local',
     mirrorHorizontal: valid.mirrorHorizontal ?? false,
     ...(valid.networkCameraUrl ? { networkCameraUrl: networkCameraUrl(valid.networkCameraUrl) } : {}),
     visionProvider: valid.visionProvider ?? 'yolo',
     ...(teachableMachineUrl ? { teachableMachineUrl } : {}),
     selectedClasses,
-    customObjects: [...new Set((valid.customObjects ?? []).map(n => n.trim()))],
+    customObjects: [...new Set([...(valid.customObjects ?? []).map(n => n.trim()), ...targetProfiles.map(p => p.label)])],
     sensorConfiguration: configuration.map(s => isDerivedSensor(s.id) ? { ...DERIVED_SENSORS[s.id as keyof typeof DERIVED_SENSORS] } : isFinchSensor(s.type) ? finchSensorDescriptor(s.type) : sensorDescriptor(s.type as keyof typeof SENSOR_TYPES, s.port)),
     id: valid.id,
     name: valid.name,
@@ -172,7 +180,7 @@ export function parseProject(text: string): Project {
         } : {}),
         ...(['singleLed', 'triLed', 'positionServo', 'rotationServo'].includes(a.kind) ? { port: a.port } : {}),
         ...(a.kind === 'singleLed' ? { brightness: a.brightness } : {}),
-        ...(a.kind === 'positionServo' ? { angle: a.angle } : {}),
+        ...(a.kind === 'positionServo' ? { angle: a.angle, ...(a.returnHome !== undefined ? { returnHome: a.returnHome } : {}) } : {}),
         color: a.color,
         ...(a.kind === 'tail' && a.tailColors !== undefined ? { tailColors: { ...a.tailColors } } : {}),
         ...(a.tailLights !== undefined ? { tailLights: [...new Set(a.tailLights)] } : {}),

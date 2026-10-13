@@ -4,8 +4,21 @@ export class MobileSAMSegmenter {
   selected: SelectedSegment | null = null;
   private worker?: Worker;
   private loaded = false;
+  private loading?: Promise<void>;
+  private queue: Promise<unknown> = Promise.resolve();
+  private epoch = 0;
+  get ready() { return this.loaded; }
   private pending?: { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
   private request(kind: string, payload: Record<string, unknown> = {}, transfer: Transferable[] = []): Promise<any> {
+    const epoch = this.epoch;
+    const result = this.queue.then(() => {
+      if (epoch !== this.epoch) throw new Error('Selection cancelled.');
+      return this.send(kind, payload, transfer);
+    });
+    this.queue = result.catch(() => {});
+    return result;
+  }
+  private send(kind: string, payload: Record<string, unknown> = {}, transfer: Transferable[] = []): Promise<any> {
     if (this.pending) return Promise.reject(new Error('Segmentation is already running.'));
     this.worker ??= new Worker(new URL('./MobileSAM.worker.ts', import.meta.url), { type: 'module' });
     return new Promise((resolve, reject) => {
@@ -19,13 +32,14 @@ export class MobileSAMSegmenter {
       this.worker!.postMessage({ kind, ...payload }, transfer);
     });
   }
-  async load() {
-    if (this.loaded) return;
-    await this.request('load', {
+  load(): Promise<void> {
+    if (this.loaded) return Promise.resolve();
+    if (this.loading) return this.loading;
+    this.loading = this.request('load', {
       encoderUrl: new URL('./models/mobilesam/encoder.onnx', document.baseURI).href,
       decoderUrl: new URL('./models/mobilesam/decoder.onnx', document.baseURI).href,
-    });
-    this.loaded = true;
+    }).then(() => { this.loaded = true; }).finally(() => { this.loading = undefined; });
+    return this.loading;
   }
   async capture(canvas: HTMLCanvasElement) {
     this.selected = null;
@@ -44,7 +58,7 @@ export class MobileSAMSegmenter {
   clearSelection() { this.selected = null; }
   async clear() { this.selected = null; if (this.loaded) await this.request('clear'); }
   dispose(message = 'Selection cancelled.') {
-    this.worker?.terminate(); this.worker = undefined; this.loaded = false; this.selected = null;
+    ++this.epoch; this.worker?.terminate(); this.worker = undefined; this.loaded = false; this.selected = null;
     if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(new Error(message)); this.pending = undefined; }
   }
 }

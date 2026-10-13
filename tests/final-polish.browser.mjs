@@ -5,8 +5,8 @@ const p=await b.newPage({viewport:{width:1440,height:900},deviceScaleFactor:1});
 await p.route('http://127.0.0.1:30061/**',r=>r.fulfill({body:'false'}));
 try {
  await p.goto('http://127.0.0.1:5174');
- expect(await p.locator('.setup-section-heading').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label')))).toEqual(['AI model','Your robot','Sensors','Objects for this project','Diagnostics']);
- for(const name of ['Start Camera','Load AI model','Connect robot']) await expect(p.locator('.workflow button').filter({hasText:name}).locator('.step-number')).not.toHaveClass(/done/);
+ expect(await p.locator('.setup-section-heading').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label')))).toEqual(['AI vision','Your robot','Sensors','Objects for this project','Diagnostics']);
+ for(const name of ['Start Camera','Choose AI vision','Connect robot']) await expect(p.locator('.workflow button').filter({hasText:name}).locator('.step-number')).not.toHaveClass(/done/);
  const type=p.getByLabel('Action 1 type',{exact:true});
  for(const width of [1440,1920]) {
   await p.setViewportSize({width,height:width===1440?900:1080});

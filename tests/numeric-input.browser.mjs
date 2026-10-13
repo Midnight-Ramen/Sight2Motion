@@ -1,0 +1,43 @@
+import {chromium,expect} from '@playwright/test';
+import {mkdirSync} from 'node:fs';
+const browser=await chromium.launch({channel:'chrome',headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+await page.route('http://127.0.0.1:30061/**',r=>r.fulfill({body:'false'}));
+try {
+ await page.goto('http://127.0.0.1:5174/');
+ const card=page.locator('.rule-card').first();
+ await card.getByLabel('Action 1 type',{exact:true}).selectOption('wait');
+ const duration=card.getByRole('spinbutton',{name:'Duration (ms)'});
+ await duration.fill('0'); await duration.press('Enter');
+ await duration.focus(); await duration.press('ControlOrMeta+A'); await duration.press('Backspace');
+ await expect(duration).toHaveValue('');
+ await page.waitForTimeout(200); await expect(duration).toHaveValue('');
+ await duration.pressSequentially('20'); await expect(duration).toHaveValue('20');
+ await duration.press('Enter'); await expect(duration).toHaveValue('20');
+ await card.getByLabel('Action 1 type',{exact:true}).selectOption('move');
+ const speed=card.getByRole('spinbutton',{name:'Speed %',exact:true});
+ const slider=card.getByRole('slider',{name:'Speed % slider',exact:true});
+ await speed.fill('30'); await speed.press('Tab'); await expect(slider).toHaveValue('30');
+ await speed.fill(''); await expect(speed).toHaveValue(''); await expect(slider).toHaveValue('30');
+ await speed.pressSequentially('5'); await expect(speed).toHaveValue('5'); await expect(slider).toHaveValue('30');
+ await speed.press('Enter'); await expect(slider).toHaveValue('5');
+ await speed.fill(''); await speed.press('Tab'); await expect(speed).toHaveValue('5');
+ await speed.fill('200'); await expect(speed).toHaveValue('200'); await speed.press('Enter'); await expect(speed).toHaveValue('100');
+ await speed.fill('-10'); await speed.press('Tab'); await expect(speed).toHaveValue('0');
+ await speed.fill('30'); await speed.press('Tab');
+ await speed.fill(''); await slider.click({position:{x:50,y:4}});
+ await expect(speed).not.toHaveValue('');
+ await expect(speed).toHaveValue(await slider.inputValue());
+ await speed.focus(); await speed.press('ArrowUp');
+ const incremented=await speed.inputValue(); await speed.press('Enter'); await expect(slider).toHaveValue(incremented);
+ // Done is an explicit action: blur commits the latest draft before validation/title generation.
+ const emergency=page.getByRole('spinbutton',{name:'Emergency stop distance cm',exact:true});
+ await emergency.fill(''); await expect(emergency).toHaveValue(''); await emergency.pressSequentially('20');
+ await card.getByRole('button',{name:'Done',exact:true}).click(); await expect(emergency).toHaveValue('20');
+ mkdirSync('test-results',{recursive:true}); await page.screenshot({path:'test-results/numeric-input-review.png'});
+ await page.goto('http://127.0.0.1:5174/tests/fixtures/numeric-action.html');
+ await page.getByLabel('Action value').fill('20');
+ await page.getByRole('button',{name:'Action',exact:true}).click();
+ await expect(page.locator('output')).toHaveText('20');
+ console.log('Clear/type, draft retention, blur/Enter, bounds, slider sync, arrow keys, Tab and explicit-action commits passed.');
+}finally{await browser.close();}

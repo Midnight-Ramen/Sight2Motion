@@ -11,16 +11,18 @@ try {
  await expect(stage.getByText('Frames are processed in this browser. No video is uploaded.')).toBeVisible();
  await expect(stage.locator('.viewfinder, .demo-link, .selection-controls')).toHaveCount(0);
  await expect(stage.getByText(/discover the world/)).toHaveCount(0);
- await expect(page.getByRole('button',{name:'Select Object',exact:true})).not.toBeVisible();
+ await expect(page.getByRole('button',{name:'Capture frame',exact:true})).not.toBeVisible();
+ await openSetup(page,'AI vision');
+ await page.getByRole('combobox',{name:'AI vision',exact:true}).selectOption('mobile-sam');
  await page.locator('.selection-drawer > summary').click();
  const drawer=page.locator('.selection-drawer');
- await expect(drawer.getByRole('button',{name:'Select Object',exact:true})).toBeVisible();
- await expect(drawer.getByText('Select an object in the camera to use Selected Target.')).toBeVisible();
+ await expect(stage.getByRole('button',{name:'Select target',exact:true})).toBeVisible();
+ await expect(drawer.getByLabel('Target label')).toBeVisible();
  await expect(drawer.locator('.selection-controls')).toHaveCSS('position','static');
  await page.locator('.selection-drawer > summary').click();
- await openSetup(page,'AI model');
- await page.getByRole('combobox',{name:'AI model',exact:true}).selectOption('teachable-machine');
- await expect(page.getByRole('button',{name:'Select Object',exact:true})).not.toBeVisible();
+ await openSetup(page,'AI vision');
+ await page.getByRole('combobox',{name:'AI vision',exact:true}).selectOption('teachable-machine');
+ await expect(page.getByRole('button',{name:'Capture frame',exact:true})).not.toBeVisible();
  await expect(stage.locator('.selection-controls')).toHaveCount(0);
  console.log('Camera empty state and drawer-only selection UI passed for YOLO and Teachable Machine.');
 } finally {await browser.close();}

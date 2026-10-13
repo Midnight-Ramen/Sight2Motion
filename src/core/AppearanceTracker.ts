@@ -1,3 +1,4 @@
+import type { AppearanceTemplate, TargetProfile } from './TargetProfiles';
 import { displayedX } from './CameraOrientation';
 import type { SelectedSegment } from './SegmentationGeometry';
 import type { TrackedTarget } from './TargetTracker';
@@ -5,10 +6,12 @@ import type { TrackedTarget } from './TargetTracker';
 type Pixels = Pick<ImageData, 'data' | 'width' | 'height'>;
 type Box = SelectedSegment['boundingBox'];
 export const APPEARANCE_STABILITY = { alpha: .65, acquireConfidence: .72, retainConfidence: .67, ambiguityMargin: .035 };
-/** Fixed appearance template: never learns background after an uncertain match. */
+/** Fixed reference templates: never learn background after an uncertain match. */
 export class AppearanceTracker {
   readonly lossTimeoutMs = 750;
-  private samples: { u: number; v: number; rgb: number[]; weight: number }[] = [];
+  private samples: AppearanceTemplate['samples'] = [];
+  private references: AppearanceTemplate[] = [];
+  private matchThreshold?: number;
   private box!: Box;
   private target: TrackedTarget | null = null;
   private lastSeen = -Infinity;
@@ -18,7 +21,7 @@ export class AppearanceTracker {
   private mirror = false;
   private name = '';
   get capturedAt() { return this.lastSeen; }
-  stop() { this.target = null; this.samples = []; this.lastSeen = this.lastFrame = -Infinity; }
+  stop() { this.target = null; this.samples = []; this.references = []; this.matchThreshold = undefined; this.lastSeen = this.lastFrame = -Infinity; }
   initialize(image: Pixels, selection: SelectedSegment, mirror: boolean) {
     this.stop(); this.width = image.width; this.height = image.height; this.mirror = mirror;
     this.name = selection.displayName?.trim() || 'Selected object';
@@ -35,6 +38,22 @@ export class AppearanceTracker {
       if (rgb) this.samples.push({ u, v, rgb, weight: inside ? 1 : .35 });
     }
     if (this.samples.length < 20) throw new Error('Not enough visible object detail. Capture another frame.');
+    this.references = [{ width: this.width, height: this.height, box: { ...this.box }, samples: this.samples }];
+  }
+  static reference(image: Pixels, selection: SelectedSegment): AppearanceTemplate {
+    const tracker = new AppearanceTracker(); tracker.initialize(image, selection, false);
+    return tracker.references[0];
+  }
+  initializeProfile(profile: TargetProfile, mirror: boolean, width: number, height: number) {
+    this.stop();
+    if (!profile.references.length) throw new Error('Capture a reference view before tracking.');
+    if (!Number.isFinite(profile.matchThreshold) || profile.matchThreshold < .01 || profile.matchThreshold > 1) throw new Error('Choose a valid target-match threshold.');
+    this.width=width; this.height=height; this.mirror=mirror; this.name=profile.label; this.matchThreshold=profile.matchThreshold;
+    this.references=profile.references.map(r=>r.appearance);
+    this.samples=this.references[0].samples;
+    const seed=this.references.at(-1)!;
+    this.box={x:seed.box.x*width/seed.width,y:seed.box.y*height/seed.height,width:seed.box.width*width/seed.width,height:seed.box.height*height/seed.height};
+    if(this.box.width<5||this.box.height<5) { this.stop(); throw new Error('Capture a larger target view for this camera.'); }
   }
   private pixel(image: Pixels, x: number, y: number) {
     x = Math.round(x); y = Math.round(y);
@@ -42,12 +61,13 @@ export class AppearanceTracker {
     const i = (y * image.width + x) * 4;
     return [image.data[i], image.data[i + 1], image.data[i + 2]];
   }
-  private score(image: Pixels, b: Box) {
+  private score(image: Pixels, b: Box, samples = this.samples) {
     let error = 0, weight = 0;
-    for (const s of this.samples) {
-      const rgb = this.pixel(image, b.x + s.u * b.width, b.y + s.v * b.height);
-      if (!rgb) return 0;
-      error += s.weight * (Math.abs(rgb[0] - s.rgb[0]) + Math.abs(rgb[1] - s.rgb[1]) + Math.abs(rgb[2] - s.rgb[2])) / 3;
+    for (const s of samples) {
+      const x=Math.round(b.x+s.u*b.width), y=Math.round(b.y+s.v*b.height);
+      if(x<0||y<0||x>=image.width||y>=image.height)return 0;
+      const i=(y*image.width+x)*4;
+      error += s.weight * (Math.abs(image.data[i] - s.rgb[0]) + Math.abs(image.data[i+1] - s.rgb[1]) + Math.abs(image.data[i+2] - s.rgb[2])) / 3;
       weight += s.weight;
     }
     return Math.max(0, 1 - error / weight / 100);
@@ -60,13 +80,20 @@ export class AppearanceTracker {
     const b = this.box, radius = Math.max(8, Math.min(24, this.width * .1));
     const candidates: { box: Box; score: number }[] = [];
     for (const scale of [.92, 1, 1.08]) for (let dy = -radius; dy <= radius; dy += 2) for (let dx = -radius; dx <= radius; dx += 2) {
-      const box = { x: b.x + dx + b.width * (1 - scale) / 2, y: b.y + dy + b.height * (1 - scale) / 2, width: b.width * scale, height: b.height * scale };
-      candidates.push({ box, score: this.score(image, box) });
+      // Each spatial candidate takes the best reference score; the winning view supplies its aspect.
+      let best: { box: Box; score: number } | undefined;
+      for (const reference of this.references) {
+        const width = this.references.length === 1 ? b.width : b.height * reference.box.width / reference.box.height;
+        const box = { x: b.x + b.width/2 + dx - width*scale/2, y: b.y + dy + b.height*(1-scale)/2, width: width*scale, height: b.height*scale };
+        const score = this.score(image, box, reference.samples);
+        if (!best || score > best.score) best = { box, score };
+      }
+      if (best) candidates.push(best);
     }
     candidates.sort((a, b) => b.score - a.score);
     const best = candidates[0];
     const other = candidates.find(c => Math.hypot(c.box.x - best.box.x, c.box.y - best.box.y) > Math.max(5, Math.min(b.width, b.height) * .5));
-    if (best.score < (this.target ? APPEARANCE_STABILITY.retainConfidence : APPEARANCE_STABILITY.acquireConfidence) ||
+    if (best.score < (this.matchThreshold ?? (this.target ? APPEARANCE_STABILITY.retainConfidence : APPEARANCE_STABILITY.acquireConfidence)) ||
       (other && best.score - other.score < APPEARANCE_STABILITY.ambiguityMargin)) {
       if (this.target) this.target = { ...this.target, state: 'TEMPORARILY_LOST', trackingConfidence: 0 };
       return this.age(now);

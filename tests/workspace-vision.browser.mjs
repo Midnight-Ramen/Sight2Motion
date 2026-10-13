@@ -46,7 +46,7 @@ try {
   await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:5174');
   await page.getByRole('button', { name: 'Start Camera', exact: true }).click();
   await expect(page.locator('.status').first()).toContainText('Camera live', { timeout: 20000 });
-  await openSetup(page, 'AI model');
+  await openSetup(page, 'AI vision');
   await page.getByRole('button', { name: 'Load local model', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Reload model', exact: true })).toBeVisible({
     timeout: 60000,

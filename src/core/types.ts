@@ -1,3 +1,4 @@
+import type { TargetProfile } from './TargetProfiles';
 import type { SensorCondition, SensorDescriptor } from './Sensors';
 export type DetectionRegion = 'anywhere' | 'left' | 'center' | 'right';
 export type DetectionDistance = 'any' | 'far' | 'near';
@@ -39,6 +40,7 @@ export interface Action {
   port?: number;
   brightness?: number;
   angle?: number;
+  returnHome?: boolean;
   color: string;
   tailLights?: number[];
   tailColors?: Partial<Record<1 | 2 | 3 | 4, string>>;
@@ -78,7 +80,10 @@ export interface VisionSettings {
   visualize: boolean;
   model: string;
 }
+export interface ServoHome { port: number; angle: number }
 export interface Project {
+  targetProfiles?: TargetProfile[];
+  servoHome?: ServoHome;
   customObjects?: string[];
   cameraSource?: 'local' | 'network';
   mirrorHorizontal?: boolean;

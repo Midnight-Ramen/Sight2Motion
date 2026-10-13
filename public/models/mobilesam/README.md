@@ -1,6 +1,6 @@
 # MobileSAM model assets
 
-MobileSAM TinyViT (`vit_t`) image encoder and single-mask SAM decoder, published by [Acly/MobileSAM](https://huggingface.co/Acly/MobileSAM/tree/0d3b403339b4674a82493d5e97964dd78089ddc8). Upstream [MobileSAM](https://github.com/ChaoningZhang/MobileSAM) uses Apache-2.0 licensing. These are optional local-browser models, requested only on Select Object activation.
+MobileSAM TinyViT (`vit_t`) image encoder and single-mask SAM decoder, published by [Acly/MobileSAM](https://huggingface.co/Acly/MobileSAM/tree/0d3b403339b4674a82493d5e97964dd78089ddc8). Upstream [MobileSAM](https://github.com/ChaoningZhang/MobileSAM) uses Apache-2.0 licensing. These are optional local-browser models, requested only when MobileSAM vision mode is selected. The page retains the worker model sessions across panel switches, camera resets and Retake; browser HTTP caching remains enabled.
 
 | Local file | Upstream file | Bytes | SHA-256 |
 | --- | --- | --- | --- |

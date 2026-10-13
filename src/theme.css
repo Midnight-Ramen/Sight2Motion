@@ -514,3 +514,104 @@ label.mirror-control input { margin: 0; width: auto; }
 .driving-tools summary { cursor: pointer; color: var(--muted); }
 #rules-workspace > .section-heading { position: static; }
 @media (max-width: 600px) { .base-settings > label { width: 100%; } }
+
+.rule-title { flex: 1; min-width: 140px; overflow-wrap: anywhere; font-size: 15px; }
+.rule-edit.rule-done { background: #16d472; border-color: #16d472; color: #123624; font-weight: 650; }
+.rule-validation { display: block; color: var(--accent); margin: 4px 0; }
+.saved-rule-name { margin: 0 12px 6px; font-size: 11px; color: var(--muted); }
+
+/* Align the main header row to the name input, independently of project buttons. */
+.topbar, .topbar .brand, .topbar .header-right, .topbar .title-line { align-items: center; }
+.topbar .brand, .topbar .header-right { margin-block: 0; }
+.topbar .beta { margin-top: 0; }
+.topbar .header-right > button { height: 36px; min-height: 36px; line-height: 1; }
+.topbar .header-right > .icon-button { width: 36px; padding: 0; }
+@media (min-width: 1251px) {
+  .topbar { row-gap: 5px; }
+  .topbar .project-bar { display: contents; }
+  .topbar .project-bar > div:first-child { grid-column: 2; grid-row: 1; }
+  .topbar .project-buttons { grid-column: 2; grid-row: 2; margin: 0; }
+}
+
+/* A quiet, compact configuration row above the primary rule workspace. */
+.base-driving { padding: 7px 10px; border-radius: 8px; margin-bottom: 8px; }
+.base-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 30px; }
+.base-strip .base-heading label, .base-strip .base-settings label { flex-wrap: nowrap; gap: 5px; white-space: nowrap; }
+.base-strip .base-heading select { min-width: 0; width: 132px; }
+.base-strip input, .base-strip select { min-height: 30px; padding: 4px 6px; font-size: 12px; }
+.base-strip .base-settings { margin: 0; gap: 6px; }
+.base-strip .numeric-slider { width: 48px; }
+.base-strip .numeric-slider input[type=range] { display: none; }
+.base-strip .numeric-slider input[type=number] { width: 48px; }
+.base-strip .navigation-controls { margin: 0; }
+.base-strip .base-emergency { margin: 0; flex-wrap: nowrap; gap: 4px; white-space: nowrap; font-size: 12px; }
+.base-strip .base-emergency input[type=checkbox] { min-height: 0; }
+.base-strip .base-emergency input[type=number] { width: 48px; }
+.base-strip-status { margin-left: auto; max-width: 145px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.base-more-settings { position: relative; font-size: 12px; }
+.base-more-settings > summary { cursor: pointer; }
+.base-more-settings > div { position: absolute; z-index: 5; right: 0; top: 28px; width: 250px; max-width: 80vw; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.base-more-settings label { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0; font-size: 12px; }
+.base-more-settings input[type=number] { width: 55px; }
+@media (max-width: 600px) { .base-strip .base-settings > label { width: auto; } }
+
+@media (max-width: 600px) {
+  .base-strip { gap: 6px 8px; }
+  .base-strip .base-heading select { width: 100px; }
+  .base-strip .base-heading label, .base-strip .base-settings label, .base-strip .navigation-controls label { font-size: 11px; }
+}
+
+/* Match the action edge inside the rule-card border and heading padding. */
+#rules-workspace > .section-heading { padding-right: 11px; }
+
+#rules-workspace .rules-controls, #rules-workspace .rule-edit { margin-left: auto; }
+
+/* Setup guidance lives between the unchanged Play and STOP controls. */
+.safety-bar { display: grid; grid-template-columns: 1fr minmax(0, auto) 1fr; align-items: center; gap: 12px; }
+.safety-bar > .primary { justify-self: start; }
+.safety-bar > .stop-button { justify-self: end; }
+.safety-bar > .setup-status { display: block; position: relative; min-width: 0; justify-self: center; max-width: 100%; }
+.setup-status summary { cursor: pointer; list-style: none; color: var(--muted); font-size: 12px; padding: 8px; text-align: center; }
+.setup-status summary::-webkit-details-marker { display: none; }
+.setup-status-full { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-status-short { display: none; }
+.setup-popover { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); width: min(280px, calc(100vw - 24px)); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); z-index: 50; }
+.setup-popover button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px; background: transparent; border: 0; font-size: 12px; }
+.setup-popover .setup-complete { color: var(--success); }
+@media (max-width: 850px) {
+  .safety-bar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; }
+  .setup-status-full { display: none; }
+  .setup-status-short { display: block; white-space: nowrap; }
+  .setup-status summary { padding: 4px; font-size: 11px; }
+}
+@media (max-width: 450px) {
+  .safety-bar > .primary, .safety-bar > .stop-button { padding: 8px 6px; gap: 5px; font-size: 11px; }
+}
+
+.snapshot-live-inset { position: absolute; z-index: 6; top: 42px; right: 12px; width: 120px; border: 2px solid var(--success); border-radius: 7px; overflow: hidden; background: var(--surface); pointer-events: none; }
+.snapshot-live-inset > span { display: block; padding: 2px 6px; font-size: 10px; color: var(--success); font-weight: 700; }
+.camera-stage .snapshot-live-inset canvas { position: static; width: 100%; height: auto; display: block; }
+.target-profile-views { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; width: 100%; }
+.target-profile-views > strong { width: 100%; font-size: 12px; }
+.target-reference { position: relative; width: 52px; height: 52px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.target-reference img { width: 100%; height: 100%; object-fit: contain; background: var(--surface-soft); }
+.target-reference button { position: absolute; top: 0; right: 0; padding: 0 4px; min-height: 18px; font-size: 12px; background: var(--surface); }
+.selection-editor .numeric-slider { width: 180px; }
+
+/* Live-first MobileSAM controls; model/session work stays in its retained worker. */
+.camera-stage .select-target-overlay { position: absolute; z-index: 7; bottom: 30px; right: 10px; min-height: 28px; padding: 4px 8px; font-size: 11px; background: var(--surface); }
+.selection-editor { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; align-items: center; }
+.selection-editor .target-name { display: flex; flex-direction: row; gap: 8px; align-items: center; width: 100%; }
+.selection-editor .target-name input { flex: 1; min-width: 0; max-width: none; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; }
+.selection-actions { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.target-add-view { width: 38px; height: 38px; padding: 0; }
+.target-live-status { width: 100%; font-size: 12px; }
+.target-advanced { width: 100%; }
+.target-advanced > summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+.target-advanced-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 8px; }
+.target-advanced-body label { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.tracked-follow-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 10px 10px; }
+.tracked-follow-controls > details { width: 100%; font-size: 12px; }
+
+.base-driving[data-selected-target=true] .base-heading select { width: 174px; }
+@media (max-width: 550px) { .base-driving[data-selected-target=true] .base-heading select { width: 148px; } }

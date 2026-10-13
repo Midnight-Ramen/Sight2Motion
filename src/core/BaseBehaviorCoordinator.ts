@@ -23,12 +23,11 @@ export class BaseBehaviorCoordinator {
   assist?: { shouldTrigger: (triggered: Rule[], active: Rule[]) => boolean; run: () => Promise<boolean>; cancel: () => void; reset: () => void };
   private assisting = false;
   get avoiding() { return this.assisting; }
-  program?: { selected: boolean; ready: () => boolean; start: () => void };
+  program?: { selected: boolean; requiresCamera?: boolean; ready: () => boolean; start: () => boolean | void };
   get programReady() { return this.program?.ready() ?? true; }
   startProgram(): boolean {
     if (!this.programReady) return false;
-    this.program?.start();
-    return true;
+    return this.program?.start() !== false;
   }
   safety: () => boolean = () => true;
   constructor(private engine: ActionEngine) {}
