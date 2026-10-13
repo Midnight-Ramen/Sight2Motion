@@ -66,6 +66,11 @@ export class ActionEngine {
     private log: (message: string) => void = () => {},
     private onError: () => void = () => {},
   ) {}
+  private stopDeliveries = new Set<Promise<void>>();
+  /** Navigation sequencing can await an existing STOP without issuing a duplicate. */
+  async waitForStops() {
+    while (this.stopDeliveries.size) await Promise.allSettled([...this.stopDeliveries]);
+  }
   async stop() {
     ++this.selectedStart;
     this.selectedFollow?.cancel(); this.selectedFollow = undefined;
@@ -76,14 +81,16 @@ export class ActionEngine {
     this.outputOwners.clear();
     this.pendingOutputOwners.clear();
     this.controller?.abort();
+    let delivery: Promise<void> | undefined;
     try {
-      await this.robot.stop();
+      delivery = this.robot.stop(); this.stopDeliveries.add(delivery);
+      await delivery;
     } catch {
       this.onError();
       this.log(
         'STOP delivery failed. Check the physical robot and use its power button if needed.',
       );
-    }
+    } finally { if (delivery) this.stopDeliveries.delete(delivery); }
   }
   /** Feed every detection evaluation, including while a normal sequence is busy. */
   async updateRules(triggered: Rule[], active: Rule[], frame?: { detections: VisionResult[]; width: number; height: number; capturedAt?: number }): Promise<boolean> {

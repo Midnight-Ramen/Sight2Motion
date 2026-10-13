@@ -141,6 +141,8 @@ export default function App() {
   );
   const [baseCoordinator] = useState(() => new BaseBehaviorCoordinator(actions));
   useEffect(() => { if (!ai) baseCoordinator.disarm(); }, [ai, baseCoordinator]);
+  const [, refreshProgram] = useState(0);
+  const programChanged = useCallback(() => refreshProgram(value => value + 1), []);
   const [sensorDisplayRevision, setSensorDisplayRevision] = useState(0);
   const [rules] = useState(() => new RuleEngine());
   const [camera] = useState(() => new CameraManager());
@@ -240,6 +242,9 @@ export default function App() {
     connected, hardwareBusy, running: ai, demo: false,
     trackedName: customTracked?.state === 'TRACKING' ? customTracked.displayName : undefined,
   });
+  const programConfigured = (readiness.play || (baseCoordinator.program?.selected && !project.rules.some(rule => rule.enabled) && connected && !hardwareBusy));
+  const programCanPlay = programConfigured &&
+    (robotMode !== 'finch' || baseCoordinator.programReady);
   const edit = (p: Project) => {
     if (aiRef.current || actions.busy) pause();
     setProject(registerRuleSensors(p));
@@ -343,6 +348,7 @@ export default function App() {
     // Evaluate sensor loss even if inference is slow or a sensor request stalls.
     const timer = setInterval(() => {
       setSensorState({ ...sensorRef.current });
+      if (aiRef.current && !baseCoordinator.safety()) { pause(); return; }
       if (!baseCoordinator.enabled && !projectRef.current.rules.some(r => r.sensorConditions?.length)) return;
       const vision = latestVision.current;
       evaluateInputs(performance.now() - vision.updatedAt <= 1500 ? vision.items : [], vision.capturedAt);
@@ -602,10 +608,11 @@ export default function App() {
       log('AI paused. Detection continues.');
       return;
     }
-    if (!readiness.play) {
-      setNotice(readiness.helper);
+    if (!programCanPlay) {
+      setNotice(baseCoordinator.programReady ? readiness.helper : 'Check base driving settings and sensor readings.');
       return;
     }
+    if (robotMode === 'finch' && !baseCoordinator.startProgram()) return;
     rules.reset();
     aiRef.current = true;
     setAi(true);
@@ -759,7 +766,7 @@ export default function App() {
             <Aperture size={25} />
           </span>
           <span>
-            Sight<span className="brand-light"> 2 Vision</span>
+            Sight<span className="brand-light">2Motion</span>
           </span>
           <span className="beta">BETA</span>
         </a>
@@ -1139,10 +1146,10 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'finch' && <ManualDrive coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onArm={() => { rules.reset(); aiRef.current = true; setAi(true); }} onManualTakeover={() => { baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
+              {robotMode === 'finch' && <ManualDrive coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onProgramChange={programChanged} onManualTakeover={() => { baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
-              <SensorInputs resetKey={`${project.id}:${sensorDisplayRevision}`} robotType={robotMode} connected={connected} configuration={pollingSensors(project.sensorConfiguration ?? [])} state={sensorState}
+              <SensorInputs feedback={robotMode === 'finch' ? finch.feedback : undefined} polling={robotMode === 'finch' ? finch.sensors.diagnostics : undefined} resetKey={`${project.id}:${sensorDisplayRevision}`} robotType={robotMode} connected={connected} configuration={pollingSensors(project.sensorConfiguration ?? [])} state={sensorState}
                 onChange={sensorConfiguration => edit({ ...project, sensorConfiguration })} />
             </SetupSection>
             <SetupSection id="objects-panel" title="Objects for this project" summary={[...project.selectedClasses, ...(project.customObjects ?? [])].join(', ') || 'None selected'} icon={<ScanLine size={18} />} open={setupOpen === 'objects-panel'} onToggle={() => toggleSetup('objects-panel')}>
@@ -1264,7 +1271,7 @@ export default function App() {
         </div>
       </main>
       <div className="safety-bar" id="play-controls" tabIndex={-1}>
-              <button className="primary" disabled={ai || !readiness.play} title={readiness.play ? undefined : readiness.helper} onClick={toggleAI}>
+              <button className="primary" disabled={ai || !programConfigured} title={programCanPlay ? undefined : readiness.helper} onClick={toggleAI}>
                 <Play size={16} /> {ai ? 'Running' : 'Play rules'}
               </button>
 

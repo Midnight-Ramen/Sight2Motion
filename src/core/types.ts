@@ -22,7 +22,7 @@ export interface ClassificationResult {
 export type VisionResult = Detection | ClassificationResult;
 export const hasBoundingBox = (result: VisionResult): result is Detection => 'x' in result;
 export type VisionProviderKind = 'yolo' | 'teachable-machine';
-export type DrivingReactionKind = 'slowDown' | 'setSpeed' | 'veerLeft' | 'veerRight' | 'resumeBase';
+export type DrivingReactionKind = 'avoidObstacle' | 'slowDown' | 'setSpeed' | 'veerLeft' | 'veerRight' | 'resumeBase';
 export type ActionKind = DrivingReactionKind | 'beak' | 'tail' | 'tailLightSequence' | 'move' | 'sound' | 'wait' | 'stop' | 'singleLed' | 'triLed' | 'positionServo' | 'rotationServo';
 export type RobotType = 'finch' | 'hummingbird';
 export type MotionMode = 'timed' | 'continuous' | 'follow';
@@ -95,6 +95,7 @@ export interface Project {
   selectedClasses: string[];
 }
 export const actionDefinitions: Record<ActionKind, { label: string; description: string }> = {
+  avoidObstacle: { label: 'Avoid obstacle', description: 'Use the rule Distance threshold to bypass an obstacle while cruising' },
   slowDown: { label: 'Slow Down', description: 'Reduce base speed while the condition is true' },
   setSpeed: { label: 'Set Speed', description: 'Temporarily override base speed' },
   veerLeft: { label: 'Steer Left', description: 'Gently steer left while moving forward' },

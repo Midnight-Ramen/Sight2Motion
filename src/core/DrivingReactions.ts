@@ -2,15 +2,15 @@ import { makeAction, makeRule, type Action, type DrivingReactionKind, type Rule 
 import type { ActionEngine } from './ActionEngine';
 import type { RobotAdapter } from './RobotAdapter';
 
-export interface DrivingOverride { kind: Exclude<DrivingReactionKind, 'resumeBase'>; speed: number }
+export interface DrivingOverride { kind: Exclude<DrivingReactionKind, 'resumeBase' | 'avoidObstacle'>; speed: number }
 export const isDrivingReaction = (action: Action): boolean =>
-  ['slowDown', 'setSpeed', 'veerLeft', 'veerRight', 'resumeBase'].includes(action.kind);
+  ['slowDown', 'setSpeed', 'veerLeft', 'veerRight', 'resumeBase', 'avoidObstacle'].includes(action.kind);
 export function drivingOverride(active: Rule[], triggered: Rule[], suppressed: ReadonlySet<string> = new Set()): DrivingOverride | undefined {
   const actions = active.flatMap(rule => rule.actions).filter(action => action.enabled);
   const entering = triggered.flatMap(rule => rule.actions).filter(action => action.enabled);
   // A stop always wins. Explicit resume wins over temporary speed/steering overrides.
   if ([...actions, ...entering].some(action => action.kind === 'stop' || action.kind === 'resumeBase')) return;
-  const action = actions.find(action => isDrivingReaction(action) && !suppressed.has(action.id));
+  const action = actions.find(action => ['slowDown', 'setSpeed', 'veerLeft', 'veerRight'].includes(action.kind) && !suppressed.has(action.id));
   return action ? { kind: action.kind as DrivingOverride['kind'], speed: action.speed } : undefined;
 }
 export const overrideKey = (override?: DrivingOverride) => override ? `${override.kind}:${override.speed}` : '';
@@ -37,4 +37,16 @@ export async function startVeer(engine: ActionEngine, robot: RobotAdapter, speed
   if (!ok || signal.aborted || !robot.connected || !robot.setWheelSpeeds) return false;
   await robot.setWheelSpeeds(...veerWheels(speed, direction), 0, signal, 'continuous');
   return !signal.aborted;
+}
+
+/** The condition owns detection distance; actions never duplicate a threshold. */
+export function avoidanceRuleThreshold(rules: Rule[]): number | undefined {
+  for (const rule of rules) {
+    if (!rule.enabled || rule.source === 'vision' || (!rule.source && !rule.sensorConditions?.length) ||
+      !rule.actions.some(action => action.enabled && action.kind === 'avoidObstacle')) continue;
+    const condition = rule.sensorConditions?.find(condition => condition.sensorId === 'finchDistance' &&
+      ['lessThan', 'lessThanOrEqual'].includes(condition.operator) && typeof condition.value === 'number' &&
+      Number.isFinite(condition.value) && condition.value > 0);
+    if (condition) return condition.value as number;
+  }
 }

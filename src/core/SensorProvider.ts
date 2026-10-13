@@ -3,6 +3,13 @@ export const SENSOR_POLL_INTERVAL = 100;
 export const PRIORITY_PAIR_INTERVAL = 20;
 /** Normal round-robin is 100 ms. Optional priority pairs share this one serial loop. */
 export class SensorProvider {
+  private debugStarts = 0;
+  private debugStops = 0;
+  private debugPublications = 0;
+  private debugActive = false;
+  private debugIds: string[] = [];
+  get diagnostics() { return { starts: this.debugStarts, stops: this.debugStops,
+    publications: this.debugPublications, active: this.debugActive, sensorIds: [...this.debugIds], priorityIds: [...this.priorityIds] }; }
   private priorityIds: string[] = [];
   private priorityIndex = 0;
   private pairHandler?: (state:SensorState)=>Promise<void>;
@@ -20,6 +27,7 @@ export class SensorProvider {
   private changed: (state: SensorState) => void = () => {};
   start(sensors: SensorDescriptor[], changed: (state: SensorState) => void) {
     this.stop();
+    ++this.debugStarts; this.debugActive = sensors.length > 0; this.debugIds = sensors.map(sensor => sensor.id);
     this.changed = changed;
     const version = this.version;
     let index = 0, pairStarted=0;
@@ -45,6 +53,7 @@ export class SensorProvider {
       if(!priority.length||phase===priority.length-1){
         if(priority.length&&this.priorityIds.join()===priority.map(s=>s.id).join())await this.pairHandler?.(this.state);
         if(version!==this.version)return;
+        ++this.debugPublications;
         this.changed(this.state);
       }
       this.timer = setTimeout(() => void tick(), priority.length ? (phase<priority.length-1 ? 0 : Math.max(0,PRIORITY_PAIR_INTERVAL-(performance.now()-pairStarted))) : SENSOR_POLL_INTERVAL);
@@ -52,6 +61,7 @@ export class SensorProvider {
     void tick();
   }
   stop() {
+    ++this.debugStops; this.debugActive = false;
     this.setPriority([]);
     ++this.version;
     clearTimeout(this.timer);

@@ -22,7 +22,7 @@ try {
   await page.getByRole('button', { name: 'Your robot', exact: true }).click();
   await page.getByRole('button', { name: 'Connect Finch 2 A', exact: true }).click();
   await page.getByLabel('Base driving behavior', { exact: true }).selectOption('Cruise Forward');
-  const start = page.getByRole('button', { name: 'Start base behavior', exact: true });
+  const start = page.getByRole('button', { name: 'Play rules', exact: true });
   await expect(start).toBeEnabled(); await start.click();
   await expect.poll(forwardCommands).toBeGreaterThan(0);
   const stopCount = await stops();

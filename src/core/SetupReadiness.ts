@@ -1,3 +1,4 @@
+import { avoidanceRuleThreshold } from './DrivingReactions';
 import { isDerivedSensor, registerRuleSensors } from './RuleSensors';
 import { ruleNeedsVision, ruleSource, type Project, type Rule } from './types';
 import { isFinchSensor } from './Sensors';
@@ -28,6 +29,8 @@ export function setupReadiness(project: Project, state: SetupState) {
     if (!robot || !compatibleRule(rule, capabilitiesFor(project.visionProvider))) return 'Next: Update the rule for this AI vision mode.';
     if (ruleNeedsVision(rule) && !known(rule.className)) return custom.includes(rule.className) ? 'Next: Select and track your target.' : 'Next: Choose an available class in your rule.';
     const actions = rule.actions.filter(action => action.enabled);
+    if (actions.some(action => action.kind === 'avoidObstacle') && avoidanceRuleThreshold([rule]) === undefined)
+      return 'Next: Add a Distance less-than condition for Avoid obstacle.';
     if (!actions.length) return 'Next: Enable an action in your rule.';
     for (const action of actions) {
       if (!ROBOTS[project.robotType].actions.includes(action.kind)) return 'Next: Choose an action supported by your robot.';

@@ -20,12 +20,23 @@ export class BaseBehaviorCoordinator {
   private override?: DrivingOverride;
   private suppressed = new Set<string>();
   private resumeCommands = new Set<string>();
+  assist?: { shouldTrigger: (triggered: Rule[], active: Rule[]) => boolean; run: () => Promise<boolean>; cancel: () => void; reset: () => void };
+  private assisting = false;
+  get avoiding() { return this.assisting; }
+  program?: { selected: boolean; ready: () => boolean; start: () => void };
+  get programReady() { return this.program?.ready() ?? true; }
+  startProgram(): boolean {
+    if (!this.programReady) return false;
+    this.program?.start();
+    return true;
+  }
   safety: () => boolean = () => true;
   constructor(private engine: ActionEngine) {}
   get enabled() { return this.armed; }
   get active() { return this.baseActive; }
   arm(driver: BaseDriver) {
     this.disarm();
+    this.assist?.reset();
     this.driver = driver;
     this.override = undefined;
     this.suppressed.clear(); this.resumeCommands.clear();
@@ -35,6 +46,8 @@ export class BaseBehaviorCoordinator {
   }
   disarm() {
     ++this.revision;
+    this.assist?.cancel();
+    this.assisting = false;
     this.armed = false;
     this.baseActive = false;
     this.driver?.suspend();
@@ -43,7 +56,7 @@ export class BaseBehaviorCoordinator {
     this.suppressed.clear(); this.resumeCommands.clear();
   }
   private async resume() {
-    if (!this.armed || this.baseActive || this.starting || this.reacting || this.pending || this.engine.busy) return;
+    if (this.assisting || !this.armed || this.baseActive || this.starting || this.reacting || this.pending || this.engine.busy) return;
     const driver = this.driver;
     if (!driver?.safe()) { this.disarm(); return; }
     const revision = this.revision;
@@ -59,6 +72,23 @@ export class BaseBehaviorCoordinator {
   async update(triggered: Rule[], active: Rule[], frame?: { detections: VisionResult[]; capturedAt: number; width: number; height: number }) {
     if (!this.safety()) { this.disarm(); await this.engine.stop(); return; }
     if (this.baseActive && !this.driver?.safe()) { this.disarm(); await this.engine.stop(); return; }
+    if (this.assisting) return;
+    if (this.armed && this.assist?.shouldTrigger(triggered, active)) {
+      const assist = this.assist, revision = ++this.revision;
+      this.assisting = true; this.baseActive = false;
+      void (async () => {
+        try {
+          await this.driver?.suspend(); await this.engine.stop();
+          if (revision !== this.revision) return;
+          const ok = await assist.run();
+          if (revision !== this.revision) return;
+          this.assisting = false;
+          if (!ok) { this.disarm(); await this.engine.stop(); }
+          // A subsequent existing evaluation applies current rules before base resume.
+        } catch { if (revision === this.revision) { this.disarm(); await this.engine.stop(); } }
+      })();
+      return;
+    }
     const activeActions = active.flatMap(rule => rule.actions).filter(action => action.enabled);
     const activeIds = new Set(activeActions.map(action => action.id));
     for (const id of this.suppressed) if (!activeIds.has(id)) this.suppressed.delete(id);

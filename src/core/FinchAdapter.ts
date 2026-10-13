@@ -9,7 +9,9 @@ export interface FinchStatus {
   connection: 'disconnected' | 'connecting' | 'connected' | 'error';
   message: string;
 }
+export interface FinchHardwareFeedback { sequence: number; raw: string; value: number | null; receivedAt: number; receivedWallTime: number }
 export class FinchAdapter implements RobotAdapter {
+  readonly feedback: Record<string, FinchHardwareFeedback> = {};
   readonly sensors = new SensorProvider((sensor, signal) => this.readSensor(sensor, signal), active => this.transport.setLineSampling(active));
   async readSensor(sensor: SensorDescriptor, signal: AbortSignal) {
     if (!this.connected || !isFinchSensor(sensor.type)) return null;
@@ -23,7 +25,15 @@ export class FinchAdapter implements RobotAdapter {
       }
       return normalizeSensor(sensor.type, 'In between');
     }
-    return normalizeSensor(sensor.type, await this.transport.request(`/hummingbird/in/${FINCH_SENSORS[sensor.type].path}/${this.slot}`, signal));
+    const raw = await this.transport.request(`/hummingbird/in/${FINCH_SENSORS[sensor.type].path}/${this.slot}`, signal);
+    const reading = normalizeSensor(sensor.type, raw);
+    // Response evidence only: renders and retained monitor values never advance this counter.
+    if (['finchDistance', 'finchEncoderLeft', 'finchEncoderRight'].includes(sensor.id)) this.feedback[sensor.id] = {
+      sequence: (this.feedback[sensor.id]?.sequence ?? 0) + 1, raw,
+      value: reading?.kind === 'number' ? reading.value : null,
+      receivedAt: performance.now(), receivedWallTime: Date.now(),
+    };
+    return reading;
   }
   status: FinchStatus = {
     connector: 'not-detected',

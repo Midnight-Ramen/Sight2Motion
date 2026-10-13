@@ -53,9 +53,15 @@ function motion(command: NavigationCommand) {
 }
 type ReturnRoute={commands:NavigationCommand[];index:number;recording:EncoderRecording};
 /** Consumes existing sensor state; never polls sensors or implements transport. */
+export interface NavigationDiagnostics {
+ command?: string; target: number; progress: [number, number]; encoderAgeMs: [number, number];
+ idleMs: [number, number];
+}
 export class FinchNavigation {
+ private completedDiagnostics?: NavigationDiagnostics;
+ get lastDiagnostics() { return this.completedDiagnostics; }
  private job?: { owner: string; abort: AbortController; start: {left:number;right:number}; target:number;
-  signs:[number,number]; straight:boolean; speed:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety; keep?:KeepDistanceState; line?:LineState };
+  signs:[number,number]; straight:boolean; speed:number; minimumTurnSpeed?:number; began:number; progress:[number,number]; advanced:[number,number]; ready:boolean; route?:ReturnRoute; advancing?:boolean; safety?:ForwardSafety; keep?:KeepDistanceState; line?:LineState };
  private timer?: ReturnType<typeof setInterval>;
  private sending = false;
  private stopCount=0;
@@ -105,17 +111,18 @@ export class FinchNavigation {
    this.status(action==='left'?'INTERSECTION → LEFT':'INTERSECTION → RIGHT');return true;
   }finally{j.advancing=false;}
  }
- async start(command: NavigationCommand, speed: number, emergencyDistance?:number) {
+ async start(command: NavigationCommand, speed: number, emergencyDistance?:number, minimumTurnSpeed?:number) {
   if (this.active || !this.allowed() || !this.robot.connected || !this.robot.setWheelSpeeds ||
    !Number.isFinite(speed) || speed <= 0 || speed > 100 || !Number.isFinite(command.amount) || command.amount <= 0 ||
    command.amount > (command.kind === 'distance' ? 200 : 360)) return false;
+  if (minimumTurnSpeed !== undefined && (!Number.isFinite(minimumTurnSpeed) || minimumTurnSpeed < 1 || minimumTurnSpeed > 100 || command.kind !== 'turn')) return false;
   const start = encoderPair(this.sensors(), this.now()); if (!start) return false;
   const safety=command.kind==='distance'&&command.direction==='forward'&&emergencyDistance!==undefined ? {emergencyDistance} : undefined;
   if(safety && (!Number.isFinite(emergencyDistance)||safety.emergencyDistance<0||freshDistance(this.sensors(),this.now())===null))return false;
   let plan:ReturnType<typeof motion>;
   try { plan=motion(command); } catch {this.status('Turn calibration required');return false;}
   return this.begin(start,plan.target,plan.signs,plan.straight,speed,
-   command.kind === 'distance' ? `Driving ${command.amount} cm…` : `Turning ${command.direction} ${command.amount}°…`,undefined,safety);
+   command.kind === 'distance' ? `Driving ${command.amount} cm…` : `Turning ${command.direction} ${command.amount}°…`,undefined,safety,undefined,undefined,minimumTurnSpeed);
  }
  async driveUntil(condition:DriveUntilCondition,speed:number,emergencyDistance?:number) {
   if(this.active||!this.allowed()||!this.robot.connected||!this.robot.setWheelSpeeds||
@@ -159,10 +166,10 @@ export class FinchNavigation {
    `Returning to Base · 1/${commands.length}`,route);
  }
  private async begin(start:{left:number;right:number},target:number,signs:[number,number],straight:boolean,speed:number,
-  message:string,route?:ReturnRoute,safety?:ForwardSafety,keep?:KeepDistanceState,line?:LineState) {
+  message:string,route?:ReturnRoute,safety?:ForwardSafety,keep?:KeepDistanceState,line?:LineState,minimumTurnSpeed?:number) {
   const began=this.now();
   const job: NonNullable<FinchNavigation['job']> = { owner: `navigation-${crypto.randomUUID()}`, abort: new AbortController(), start,target,signs,straight,speed,
-   began,progress:[0,0],advanced:[began,began],ready:false,route,safety,keep,line };
+   began,progress:[0,0],advanced:[began,began],ready:false,route,safety,keep,line,minimumTurnSpeed };
   this.job=job;this.lastCommand=undefined;this.status(message);
   this.timer = setInterval(() => { void this.tick(); }, NAVIGATION.tickMs);
   // Claim the same wheel owner as Manual Drive using a zero-speed continuous action.
@@ -179,6 +186,16 @@ export class FinchNavigation {
  }
  private finish(message:string,success:boolean) {
   const job = this.job; if (!job) return;
+  const state = this.sensors(), now = this.now();
+  this.completedDiagnostics = {
+   command: this.lastCommand, target: job.target,
+   progress: ['finchEncoderLeft','finchEncoderRight'].map((id,i) => {
+    const reading = state[id]?.reading;
+    return reading?.kind === 'number' ? (reading.value - (i === 0 ? job.start.left : job.start.right)) * job.signs[i] : NaN;
+   }) as [number,number],
+   encoderAgeMs: ['finchEncoderLeft','finchEncoderRight'].map(id => state[id] ? now-state[id].updatedAt : Infinity) as [number,number],
+   idleMs: job.advanced.map(at => now-at) as [number,number],
+  };
   this.stopCount++;
   this.job = undefined; job.abort.abort(); clearInterval(this.timer); this.timer = undefined;
   void this.engine.stop();
@@ -248,9 +265,9 @@ export class FinchNavigation {
   const remaining=j.target-Math.min(...progress);
   const base=j.straight
    ? Math.min(j.speed,Math.max(Math.min(j.speed,NAVIGATION.minimumSpeed),j.speed*Math.min(1,remaining/NAVIGATION.slowdownRotations)))
-   : Math.min(j.speed,Math.max(Math.min(j.speed,NAVIGATION.turnMinimumSpeed),j.speed*Math.pow(Math.min(1,remaining/NAVIGATION.turnSlowdownRotations),NAVIGATION.turnSlowdownExponent)));
+   : Math.min(j.speed,Math.max(Math.min(j.speed,j.minimumTurnSpeed ?? NAVIGATION.turnMinimumSpeed),j.speed*Math.pow(Math.min(1,remaining/NAVIGATION.turnSlowdownRotations),NAVIGATION.turnSlowdownExponent)));
   const correction=Math.max(-NAVIGATION.maxCorrection,Math.min(NAVIGATION.maxCorrection,(progress[0]-progress[1])*(j.straight ? NAVIGATION.straightDriftGain : NAVIGATION.driftGain)));
-  const output=[base-correction,base+correction].map((v,i)=>done[i]?0:Math.round(Math.max(0,Math.min(j.speed,v)))*j.signs[i]);
+  const output=[base-correction,base+correction].map((v,i)=>done[i]?0:Math.round(Math.max(Math.min(j.speed,j.minimumTurnSpeed ?? 0),Math.min(j.speed,v)))*j.signs[i]);
   await this.sendWheels(j,output);
  }
  private async tickLine(j:NonNullable<FinchNavigation['job']>,now:number) {

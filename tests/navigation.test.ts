@@ -423,3 +423,47 @@ it.each(['global STOP','manual takeover','disconnect','stale','disabled'])('visi
 it('vision Stop while idle never creates a resumable line session',async()=>{
  const s=await setup();await s.nav.roadSign('stop',20);expect(await s.nav.roadSign('resume',20)).toBe(false);expect(s.nav.active).toBe(false);
 });
+
+it.each(['left','right'] as const)('avoidance-only %s floor prevents low-power short turns without changing target', async direction => {
+ const s=await setup(),sign=direction==='left'?-1:1,target=geometry.turnRotations(30);
+ expect(await s.nav.start({kind:'turn',direction,amount:30},20,undefined,12)).toBe(true);
+ expect(s.wheel.mock.calls[0].slice(0,2)).toEqual([12*sign,-12*sign]);
+ await s.advance(100,(target-.03)*sign,-(target-.03)*sign);
+ expect(s.wheel.mock.calls.at(-1)!.slice(0,2)).toEqual([12*sign,-12*sign]);
+ await s.advance(100,target*sign,-target*sign);
+ expect(s.nav.active).toBe(false); expect(s.status).toHaveBeenLastCalledWith('Navigation complete');
+});
+it('ordinary short turns retain their existing minimum and avoidance stalls still abort', async () => {
+ const s=await setup(); await s.nav.start({kind:'turn',direction:'left',amount:30},20);
+ expect(s.wheel.mock.calls[0].slice(0,2)).toEqual([-5,5]); s.nav.cancel();
+ await s.nav.start({kind:'turn',direction:'left',amount:30},20,undefined,12);
+ await s.advance(NAVIGATION.stallMs,0,0);
+ expect(s.nav.active).toBe(false); expect(s.status).toHaveBeenLastCalledWith('Navigation stopped: encoder progress stalled');
+});
+
+it('avoidance drift correction never drops an unfinished wheel below its approved power floor', async () => {
+ const s=await setup(); await s.nav.start({kind:'turn',direction:'left',amount:30},20,undefined,12);
+ await s.advance(100,-.08,.02);
+ const command=s.wheel.mock.calls.at(-1)!;
+ expect(Math.abs(command[0])).toBeGreaterThanOrEqual(12); expect(Math.abs(command[1])).toBeGreaterThanOrEqual(12);
+ s.nav.cancel();
+});
+
+it('retains stall command and per-wheel encoder evidence after STOP', async () => {
+ const s=await setup(); await s.nav.start({kind:'turn',direction:'left',amount:30},20,undefined,12);
+ await s.advance(NAVIGATION.stallMs,0,0);
+ expect(s.nav.lastDiagnostics?.command).toBe('-12,12');
+ expect(s.nav.lastDiagnostics?.progress).toEqual([-0,0]);
+ expect(s.nav.lastDiagnostics?.target).toBeCloseTo(geometry.turnRotations(30));
+ expect(s.nav.lastDiagnostics?.encoderAgeMs).toEqual([0,0]);
+ expect(s.nav.lastDiagnostics?.idleMs).toEqual([NAVIGATION.stallMs,NAVIGATION.stallMs]);
+});
+
+it('uses the revised avoidance power for both scan wheels without changing the calibrated target', async () => {
+ const { OBSTACLE_AVOIDANCE } = await import('../src/core/ObstacleAvoidance');
+ expect(OBSTACLE_AVOIDANCE.minimumTurnSpeed).toBe(20);
+ const s=await setup();await s.nav.start({kind:'turn',direction:'left',amount:30},20,undefined,OBSTACLE_AVOIDANCE.minimumTurnSpeed);
+ expect(s.wheel.mock.calls[0].slice(0,2)).toEqual([-20,20]);
+ const target=geometry.turnRotations(30);await s.advance(100,-target,target);
+ expect(s.nav.active).toBe(false);expect(s.status).toHaveBeenLastCalledWith('Navigation complete');
+});

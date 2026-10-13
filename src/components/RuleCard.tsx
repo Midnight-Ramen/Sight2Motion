@@ -264,7 +264,7 @@ export function RuleCard({
                 >
                   {!capabilities.includes(a.kind) && <option value="" disabled>Choose an action</option>}
                   {capabilities.includes('move') && <optgroup label="Driving">
-                    {(['stop', 'slowDown', 'setSpeed', 'veerLeft', 'veerRight'] as ActionKind[]).filter(kind => capabilities.includes(kind)).map(kind => <option key={kind} value={kind}>{kind === 'stop' ? 'Stop' : actionDefinitions[kind].label}</option>)}
+                    {(['stop', 'slowDown', 'setSpeed', 'veerLeft', 'veerRight', 'avoidObstacle'] as ActionKind[]).filter(kind => capabilities.includes(kind)).map(kind => <option key={kind} value={kind}>{kind === 'stop' ? 'Stop' : actionDefinitions[kind].label}</option>)}
                     <option value="turn-left">Turn Left</option><option value="turn-right">Turn Right</option>
                     {capabilities.includes('resumeBase') && <option value="resumeBase">Resume Base</option>}
                     <option value="move">Move</option>
@@ -279,6 +279,7 @@ export function RuleCard({
                 </select>
                 {!capabilities.includes(a.kind) && <small role="status">Not available for {robotName}</small>}
                 {capabilities.includes(a.kind) && <>
+                {a.kind === 'avoidObstacle' && <small>Uses this rule’s Distance threshold. Cruise Forward only.</small>}
                 {(a.kind === 'slowDown' || a.kind === 'setSpeed') && <label>Speed %
                   <NumericSlider aria-label={`Action ${i + 1} speed`} min={1} max={100} value={a.speed}
                     onChange={e => updateAction(a.id, { speed: Math.max(1, Math.min(100, +e.target.value)) })} />

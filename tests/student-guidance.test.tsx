@@ -50,7 +50,7 @@ it('empty detection text is provider-aware and not an error', () => {
 });
 it('Play exposes its blocker as a tooltip and model failures are not duplicated in banners', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
-  expect(app).toContain('title={readiness.play ? undefined : readiness.helper}');
+  expect(app).toContain('title={programCanPlay ? undefined : readiness.helper}');
   const modelCatch = app.slice(app.lastIndexOf('setModelError(true)'), app.indexOf('function toggleAI'));
   expect(modelCatch).not.toContain('setNotice(');
   expect(modelCatch).toContain('console.warn');

@@ -16,7 +16,7 @@ try{
  await p.getByRole('button',{name:'Your robot',exact:true}).click();
  await p.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
  await p.getByLabel('Base driving behavior',{exact:true}).selectOption('Line Follow');
- const start=p.getByRole('button',{name:'Start base behavior',exact:true});
+ const start=p.getByRole('button',{name:'Play rules',exact:true});
  await expect(start).toBeEnabled();
  await expect(p.getByRole('spinbutton',{name:'Base driving speed',exact:true})).toHaveValue('20');
  await expect(p.getByRole('spinbutton',{name:'Line Follow sensitivity',exact:true})).toHaveCount(0);
