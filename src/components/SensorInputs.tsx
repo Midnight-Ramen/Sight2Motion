@@ -1,11 +1,8 @@
-import type { FinchHardwareFeedback } from '../core/FinchAdapter';
-import type { SensorProvider } from '../core/SensorProvider';
 import { useRef } from 'react';
 import { NumericSensorDisplay } from './NumericSensorDisplay';
 import { SENSOR_GROUPS } from './SensorPresentation';
 import { FINCH_SENSORS, HEADING_UNAVAILABLE, finchSensorDescriptor, type FinchSensorType, SENSOR_TYPES, SENSOR_MAX_AGE, sensorDescriptor, type SensorDescriptor, type SensorState } from '../core/Sensors';
-export function SensorInputs({ configuration, state, onChange, resetKey, robotType = 'hummingbird', connected = false, feedback, polling }: {
-  feedback?: Record<string, FinchHardwareFeedback>; polling?: SensorProvider['diagnostics'];
+export function SensorInputs({ configuration, state, onChange, resetKey, robotType = 'hummingbird', connected = false }: {
   resetKey?: string;
   robotType?: 'finch' | 'hummingbird'; connected?: boolean;
   configuration: SensorDescriptor[]; state: SensorState; onChange: (sensors: SensorDescriptor[]) => void;
@@ -42,17 +39,6 @@ export function SensorInputs({ configuration, state, onChange, resetKey, robotTy
           <span>{cache.current.value(type)}</span>
         </div>)}
       </details>
-      {feedback && <details open className="feedback-diagnostics"><summary>Live feedback diagnostics (temporary)</summary>
-        <p>App: {connected ? 'attached' : 'disconnected'} · Polling: {polling?.active ? 'active' : 'stopped'} · Starts/stops: {polling?.starts ?? 0}/{polling?.stops ?? 0} · Publications: {polling?.publications ?? 0}</p>
-        {(['finchDistance', 'finchEncoderLeft', 'finchEncoderRight'] as const).map(id => {
-          const sample = feedback[id];
-          return <p key={id} data-feedback-sensor={id}>{FINCH_SENSORS[id].label}: {sample?.value ?? '—'} · Sequence #{sample?.sequence ?? 0}
-            {' · '}Age: {sample ? Math.max(0, Math.round(performance.now() - sample.receivedAt)) : '—'} ms
-            {' · '}Last successful response: {sample ? new Date(sample.receivedWallTime).toLocaleTimeString() : '—'}
-            {sample?.value === null ? ` · Raw: ${sample.raw}` : ''}</p>;
-        })}
-        <small>Registered: {polling?.sensorIds.join(', ') || 'none'}</small>
-      </details>}
       <p>Heading: {HEADING_UNAVAILABLE}</p>
     </> : [1, 2, 3].map(port => <label key={port}>Input {port}
       <select aria-label={`Input ${port} sensor`} value={configuration.find(s => s.port === port)?.type ?? ''}
