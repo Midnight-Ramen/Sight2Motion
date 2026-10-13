@@ -71,13 +71,12 @@ try{
  await page.evaluate(()=>window.profileFixture.setSide(true));await page.waitForTimeout(150);
  await selectView();await expect(page.getByLabel('Target label')).toHaveValue('Red robot');await expect(page.getByLabel('Target label')).toBeDisabled();
  await page.getByRole('button',{name:'Save view',exact:true}).click();await expect(page.getByTestId('reference-view')).toHaveCount(2);await expect(selection).toHaveCount(0);
- const downloadPromise=page.waitForEvent('download');await page.getByLabel('Import and export',{exact:true}).click();await page.getByRole('button',{name:'Export JSON',exact:true}).click();
+ const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Save project',exact:true}).click();
  const download=await downloadPromise;const project=JSON.parse(readFileSync(await download.path(),'utf8'));
  expect(project.targetProfiles[0].label).toBe('Red robot');expect(project.targetProfiles[0].references).toHaveLength(2);
  expect(project.targetProfiles[0].references[0].crop.image).toMatch(/^data:image\/png;base64,/);
  const imported=await page.evaluate(async project=>{const {parseProject}=await import('/src/core/ProjectStorage.ts');return parseProject(JSON.stringify(project));},project);
  expect(imported.targetProfiles).toEqual(project.targetProfiles);
- await page.getByLabel('Import and export',{exact:true}).click();
  const mode=page.getByLabel('Base driving behavior',{exact:true});
  await expect(mode.locator('option',{hasText:'Follow selected target'})).toHaveCount(1);
  await expect(page.getByRole('button',{name:'Follow selected target',exact:true})).toHaveCount(0);
@@ -85,10 +84,12 @@ try{
  await page.getByRole('button',{name:'Delete rule 1',exact:true}).click();
  await openSetup(page,'Your robot');await page.getByRole('button',{name:'Connect Finch 2 A',exact:true}).click();
  await mode.selectOption('Follow selected target');
+ // Isolate target tracking from the separately tested distance-sensor safety assist.
+ await page.getByRole('checkbox',{name:'Emergency braking',exact:true}).uncheck();
  const moving=()=>page.evaluate(()=>window.profileMotion.paths.filter(path=>/\/wheels\/A\/(?!0\/0\/)/.test(path)).length);
  await page.waitForTimeout(400);expect(await moving()).toBe(0);
  const play=page.getByRole('button',{name:'Play rules',exact:true}),stop=page.getByRole('button',{name:/STOP ROBOT/});
- await expect(play).toBeEnabled();await play.click();
+ await expect(page.locator("#play-controls")).toContainText("Ready to run");await expect(play).toBeEnabled();await play.click();
  await expect(page.locator('#play-controls').getByRole('button',{name:'Running',exact:true})).toBeVisible();
  await expect.poll(moving,{timeout:10000}).toBeGreaterThan(0);
  await expect(page.locator('.target-live-status')).toContainText('Red robot');await expect(page.locator('.target-live-status')).toContainText('Tracking');
@@ -98,10 +99,17 @@ try{
  await stop.click();const afterStop=await moving();await page.waitForTimeout(800);expect(await moving()).toBe(afterStop);
  await expect(play).toBeEnabled();await play.click();await expect.poll(moving).toBeGreaterThan(afterStop);
  await page.evaluate(()=>window.profileFixture.setHidden(true));
- await expect(play).toBeVisible({timeout:5000});await expect(page.locator('.target-live-status')).toContainText('Lost');
+ await expect(page.locator('.target-live-status')).toContainText('Reacquiring');
+ const held=await moving();await page.waitForTimeout(500);expect(await moving()).toBe(held);
+ await page.evaluate(()=>window.profileFixture.setHidden(false));
+ await expect(page.locator('.target-live-status')).toContainText('Reacquired');
+ await expect.poll(moving).toBeGreaterThan(held);
+ await page.evaluate(()=>window.profileFixture.setHidden(true));
+ await expect(play).toBeVisible({timeout:7000});
+ await expect(page.locator('.base-strip-status')).toContainText('Target lost');
  const afterLoss=await moving();await page.evaluate(()=>window.profileFixture.setHidden(false));await page.waitForTimeout(1000);expect(await moving()).toBe(afterLoss);
  await expect(play).toBeEnabled();await play.click();await expect.poll(moving).toBeGreaterThan(afterLoss);
  await page.keyboard.press('Space');const afterSpace=await moving();await page.waitForTimeout(700);expect(await moving()).toBe(afterSpace);
  await expect(page.getByRole('button',{name:'Follow selected target',exact:true})).toHaveCount(0);
- console.log('Profile base availability, paused configuration, Play auto-matching/Follow, alternate-view rotation, global STOP, target-loss/no automatic reacquisition and Space passed with simulated camera/SAM/BlueBird. No physical commands sent.');
+ console.log('Profile base availability, paused configuration, Play auto-matching/Follow, alternate-view rotation, global STOP, bounded reacquisition/resume and terminal timeout and Space passed with simulated camera/SAM/BlueBird. No physical commands sent.');
 }finally{await browser.close();}

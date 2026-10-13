@@ -38,7 +38,7 @@ async function setup(){
  cleanups.push(()=>{program.end();coordinator.disarm();void engine.stop();});
  async function sample(){const target=tracker.update(frame(side,hidden),performance.now(),width,height);await program.publish(target,tracker.capturedAt,tracker.lossTimeoutMs);await coordinator.update([],[]);}
  async function run(ms=1200){for(let t=0;t<ms;t+=100){await vi.advanceTimersByTimeAsync(100);await sample();}}
- return {robot,engine,program,coordinator,tracker,profile,source,match,abort,run,sample,setSide:(value:boolean)=>{side=value;},hide:()=>{hidden=true;},brake:()=>{safe=false;},clearBrake:()=>{safe=true;}};
+ return {robot,engine,program,coordinator,tracker,profile,source,match,abort,run,sample,setSide:(value:boolean)=>{side=value;},hide:()=>{hidden=true;},show:()=>{hidden=false;},brake:()=>{safe=false;},clearBrake:()=>{safe=true;}};
 }
 it('a valid multi-view profile is configured, but matching and motion wait for global Play',async()=>{
  const s=await setup();expect(s.program.configured).toBe(true);expect(s.program.label).toBe('Red robot');expect(s.profile.references).toHaveLength(2);
@@ -50,7 +50,7 @@ it('rotation matches another view and short uncertainty recovers within the unch
  s.setSide(true);await s.run(400);expect(s.tracker.age()?.state).toBe('TRACKING');expect(s.engine.followingSelectedTarget).toBe(true);
  expect(starts).toHaveBeenCalledTimes(1);expect(s.match).toHaveBeenCalledTimes(1);expect(s.abort).not.toHaveBeenCalled();
  const at=s.tracker.capturedAt;await s.program.publish({...s.tracker.age()!,state:'TEMPORARILY_LOST',trackingConfidence:0},at,750);
- await vi.advanceTimersByTimeAsync(400);await s.sample();expect(s.engine.followingSelectedTarget).toBe(true);expect(starts).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(400);await s.sample();expect(s.engine.followingSelectedTarget).toBe(true);expect(starts).toHaveBeenCalledTimes(2);
 });
 it('Play rejects an unmatched target without starting Follow',async()=>{
  const s=await setup();s.hide();expect(s.coordinator.startProgram()).toBe(false);await settle();expect(s.engine.followingSelectedTarget).toBe(false);expect(s.robot.setWheelSpeeds).not.toHaveBeenCalled();
@@ -61,8 +61,8 @@ it.each(['STOP','manual takeover','disconnect'])('%s prevents restart even when 
  const count=s.robot.setWheelSpeeds.mock.calls.length;await s.run(1000);
  expect(s.robot.state.left).toBe(0);expect(s.robot.state.right).toBe(0);expect(s.robot.setWheelSpeeds).toHaveBeenCalledTimes(count);expect(s.match).toHaveBeenCalledTimes(1);expect(s.engine.followingSelectedTarget).toBe(false);
 });
-it('target loss stops via the existing watchdog, and later matching cannot auto-start Follow',async()=>{
- const s=await setup();s.coordinator.startProgram();await settle();await s.run();s.hide();await s.run(900);
+it('target loss holds Play while stopped, then times out without auto-start',async()=>{
+ const s=await setup();s.coordinator.startProgram();await settle();await s.run();s.hide();await s.run(900);expect(s.program.armed).toBe(true);expect(s.robot.state.left).toBe(0);await s.run(4400);
  expect(s.robot.state.left).toBe(0);expect(s.robot.state.right).toBe(0);expect(s.engine.followingSelectedTarget).toBe(false);expect(s.program.armed).toBe(false);expect(s.abort).toHaveBeenCalled();
  await s.run(300);expect(s.match).toHaveBeenCalledTimes(1);expect(s.coordinator.enabled).toBe(false);
 });
@@ -89,4 +89,37 @@ it('STOP during an in-flight initial STOP cannot create a late Follow controller
  vi.spyOn(s.robot,'stop').mockImplementationOnce(()=>new Promise<void>(resolve=>{release=()=>{void original().then(resolve);};}));
  s.coordinator.startProgram();await settle();s.program.end();s.coordinator.disarm();await s.engine.stop();release();await settle();
  await s.run(500);expect(s.engine.followingSelectedTarget).toBe(false);expect(s.robot.setWheelSpeeds).not.toHaveBeenCalled();
+});
+
+it('three stable returning views resume through normal Follow start, with wheels stopped throughout recovery',async()=>{
+ const s=await setup();const starts=vi.spyOn(s.engine,'startSelectedFollow');
+ s.coordinator.startProgram();await settle();await s.run();s.hide();await s.run(200);
+ expect(s.robot.state.left).toBe(0);expect(s.robot.state.right).toBe(0);expect(s.program.armed).toBe(true);
+ s.show();s.setSide(true);await s.run(300);expect(s.robot.state.left).toBe(0);
+ await s.run(1200);expect(s.engine.followingSelectedTarget).toBe(true);expect(starts).toHaveBeenCalledTimes(2);
+});
+it.each(['STOP','manual','disconnect','camera change','profile change'])('%s cancels during reacquisition',async cause=>{
+ const s=await setup();s.coordinator.startProgram();await settle();await s.run();s.hide();await s.run(200);
+ s.program.end();s.coordinator.disarm();await s.engine.stop();if(cause==='disconnect')await s.robot.disconnect();
+ const count=s.robot.setWheelSpeeds.mock.calls.length;s.show();await s.run(1500);
+ expect(s.program.armed).toBe(false);expect(s.robot.setWheelSpeeds).toHaveBeenCalledTimes(count);
+});
+
+it('a Stop rule during reacquisition retains ownership until the rule clears',async()=>{
+ const s=await setup();s.coordinator.startProgram();await settle();await s.run();s.hide();await s.run(100);
+ const rule={...makeRule(),source:'sensor' as const,mode:'continuous' as const,actions:[makeAction('stop')]};
+ await s.coordinator.update([rule],[rule]);s.show();
+ for(let i=0;i<12;i++){
+  await vi.advanceTimersByTimeAsync(100);
+  const t=s.tracker.update(frame(),performance.now(),width,height);
+  await s.program.publish(t,s.tracker.capturedAt,750);await s.coordinator.update([], [rule]);
+  expect(s.robot.state.left).toBe(0);expect(s.robot.state.right).toBe(0);
+ }
+ await s.coordinator.update([],[]);await s.run();expect(s.engine.followingSelectedTarget).toBe(true);
+});
+it('ending a recovery cancels matching and prevents later auto-resume',async()=>{
+ const s=await setup();const cancelMatch=vi.fn(()=>s.tracker.stop());s.program.setSource(Symbol('cancel-source'),{...s.source,cancelMatch});
+ s.coordinator.startProgram();await settle();await s.run();s.hide();await s.run(100);
+ s.program.end();s.coordinator.disarm();await settle();
+ expect(cancelMatch).toHaveBeenCalled();expect(s.tracker.age()).toBeNull();s.show();await s.run(1000);expect(s.engine.followingSelectedTarget).toBe(false);
 });

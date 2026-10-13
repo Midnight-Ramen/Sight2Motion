@@ -127,7 +127,7 @@ export function parseProject(text: string): Project {
   const valid = p as unknown as Project;
   const teachableMachineUrl = valid.teachableMachineUrl ? normalizeTeachableMachineUrl(valid.teachableMachineUrl) : undefined;
   // Preserve every referenced class, including legacy projects with more than ten objects.
-  const selectedClasses = [...new Set([...(valid.selectedClasses ?? []), ...valid.rules.filter(ruleNeedsVision).map(r => r.className)])];
+  const selectedClasses = [...new Set([...(valid.selectedClasses ?? []), ...valid.rules.filter(ruleNeedsVision).map(r => r.className).filter(name => name.trim())])];
   if (!selectedClasses.length && valid.selectedClasses === undefined) selectedClasses.push('person');
   // Keep only our schema: extra imported fields (including media) are discarded.
   return {

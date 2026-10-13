@@ -4,7 +4,7 @@ import { Scan, Plus } from 'lucide-react';
 import { NumericSlider } from './NumericSlider';
 import { captureTargetReference } from './TargetReferenceCapture';
 import { migrateTargetProfiles, saveTargetView, removeTargetView, type TargetProfile } from '../core/TargetProfiles';
-import { AppearanceTracker } from '../core/AppearanceTracker';
+import { AppearanceTracker, REACQUISITION } from '../core/AppearanceTracker';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CameraManager } from '../core/CameraManager';
@@ -295,7 +295,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   useEffect(() => {
     if(!profileProgram)return;
     const owner=sourceOwner.current;
-    profileProgram.setSource(owner,{profile,canMatch:()=>available && !active && !busy && !!camera.frame,match:startProfileTracking});
+    profileProgram.setSource(owner,{profile,canMatch:()=>available && !active && !busy && !!camera.frame,match:startProfileTracking,cancelMatch:stopProfileTracking});
     return () => profileProgram.clearSource(owner);
   },[profileProgram,profile,available,active,busy,camera,mirror]);
   function stopProfileTracking() {appearanceActive.current=false;appearance.stop();tracker.stop();setTarget(null);}
@@ -330,7 +330,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
       {target && <button onClick={() => { stopProfileTracking();setStatus('Tracking stopped.'); }}>Stop tracking</button>}
     </>}
     <span role="status" className="target-live-status">{!active && target
-      ? `${target.displayName} · Match ${Math.round(target.trackingConfidence*100)}% · ${target.targetLost ? 'Lost' : target.state === 'TRACKING' ? 'Tracking' : 'Uncertain'}`
+      ? `${target.displayName} · Match ${Math.round((appearanceActive.current ? appearance.diagnostics.bestMatch : target.trackingConfidence)*100)}%${appearanceActive.current && appearance.diagnostics.winningView ? ` · view ${appearance.diagnostics.winningView}` : ''} · ${target.targetLost ? 'Lost' : target.state === 'REACQUIRING' ? 'Reacquiring…' : target.state === 'TRACKING' ? appearance.reacquired ? 'Reacquired' : 'Tracking' : 'Uncertain'}`
       : modelStatus !== 'MobileSAM ready' ? modelStatus : status || modelStatus}</span>
     <details className="target-advanced"><summary>Advanced target settings</summary>
       <div className="target-advanced-body">
@@ -340,6 +340,8 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
         {active && <label>Selection mode <select aria-label="Selection mode" disabled={busy} value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
           <option value="positive">Add to object</option><option value="negative">Remove from object</option><option value="box">Box Select</option>
         </select></label>}
+        {appearanceActive.current && <small className="appearance-diagnostics" aria-label="Target matching diagnostics">State: {target?.state ?? 'MATCHING'} · Best match: {Math.round(appearance.diagnostics.bestMatch*100)}% · View: {appearance.diagnostics.winningView || '—'} · Search: {appearance.diagnostics.searchMode} · Radius: {Math.round(appearance.diagnostics.searchRadius)} px · Scale: {appearance.diagnostics.candidateScale.toFixed(2)} · Margin: {appearance.diagnostics.margin.toFixed(2)} · Search time: {appearance.diagnostics.searchMs.toFixed(1)} ms</small>}
+        <small>Reacquisition: up to {REACQUISITION.windowMs / 1000}s · at least {Math.round(REACQUISITION.confidence * 100)}% match · {REACQUISITION.stableFrames} stable matches · {REACQUISITION.intervalMs}ms minimum search interval.</small>
         {profile && <label>Match threshold %<NumericSlider aria-label="Target match threshold" min={1} max={100} step={1} value={Math.round(profile.matchThreshold*100)} disabled={busy || appearanceActive.current}
           onChange={e => updateProfiles(profiles.map(p => p.label===profile.label ? {...p,matchThreshold:+e.target.value/100} : p))} /></label>}
         {!active && <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && !target?.targetLost} onClick={startProfileTracking}>Retry match</button>}

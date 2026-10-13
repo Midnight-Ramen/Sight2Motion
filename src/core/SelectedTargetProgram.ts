@@ -1,3 +1,4 @@
+import { REACQUISITION } from './AppearanceTracker';
 import type { ActionEngine } from './ActionEngine';
 import { TRACKED_FOLLOW_DEFAULTS, type TrackedFollowSettings } from './FollowController';
 import type { TrackedTarget } from './TargetTracker';
@@ -5,12 +6,16 @@ import type { TargetProfile } from './TargetProfiles';
 
 export interface SelectedTargetSource {
   profile?: TargetProfile;
+  cancelMatch?: () => void;
   canMatch: () => boolean;
   match: () => TrackedTarget | null;
 }
 /** Base-program adapter only: matching stays in the existing profile tracker,
  * wheel control and the loss watchdog stay in ActionEngine/FollowController. */
 export class SelectedTargetProgram {
+  private recoverySince: number | null = null;
+  private recoveryResume = false;
+  private recoveryStop: Promise<void> = Promise.resolve();
   private owner?: symbol;
   private source?: SelectedTargetSource;
   private target: TrackedTarget | null = null;
@@ -39,6 +44,7 @@ export class SelectedTargetProgram {
   }
   clearSource(owner: symbol) {
     if(this.owner!==owner)return;
+    this.source?.cancelMatch?.();
     this.owner=undefined;this.source=undefined;this.target=null;
     if(this.session)this.fail('Target profile unavailable.');
     this.changed();
@@ -52,7 +58,11 @@ export class SelectedTargetProgram {
     return !!this.target?.active && !this.target.targetLost && this.target.state!=='LOST' &&
       this.target.displayName===this.label && Number.isFinite(age) && age>=0 && age<this.timeout;
   }
-  get safe() { return this.session && this.ready && this.fresh(); }
+  get safe() {
+    return this.session && this.ready && (this.recoverySince!==null
+      ? performance.now()-this.recoverySince<REACQUISITION.windowMs && !this.target?.targetLost
+      : this.fresh());
+  }
   /** Only an explicit global Play creates a fresh match session. */
   begin(): boolean {
     this.end();this.status='';
@@ -66,7 +76,9 @@ export class SelectedTargetProgram {
   }
   /** Rules may suspend/resume the same safe match session; never initialize again. */
   async resume(speed=this.settings.baseSpeed): Promise<boolean> {
-    if(!this.safe || this.target?.state!=='TRACKING')return false;
+    if(!this.safe)return false;
+    if(this.recoverySince!==null){this.recoveryResume=true;return true;}
+    if(this.target?.state!=='TRACKING')return false;
     const revision=++this.revision;this.driving=true;this.starting=true;
     try {
       await this.engine.startSelectedFollow(this.target,this.capturedAt,this.timeout,{...this.settings,baseSpeed:speed});
@@ -78,14 +90,38 @@ export class SelectedTargetProgram {
     } catch { if(revision===this.revision)this.fail('Target Follow stopped.');return false; }
   }
   suspend() {
+    this.recoveryResume=false;
     ++this.revision;this.driving=false;this.starting=false;
     return this.engine.stopSelectedFollow();
   }
-  end() { this.session=false;void this.suspend(); }
+  end() { this.source?.cancelMatch?.();this.recoverySince=null;this.recoveryResume=false;this.session=false;void this.suspend(); }
   private fail(message: string) { this.status=message;this.end();this.changed();this.aborted(); }
   async publish(target: TrackedTarget | null, capturedAt: number, timeout: number) {
     this.target=target;this.capturedAt=capturedAt;this.timeout=timeout;
     if(!this.session)return;
+    if(target && !target.targetLost && (target.state==='REACQUIRING' || target.state==='TEMPORARILY_LOST')) {
+      if(this.recoverySince===null) {
+        this.recoverySince=performance.now();
+        const resume=this.driving;
+        this.recoveryStop=Promise.resolve(this.suspend());
+        this.recoveryResume=resume;
+        this.status=`${this.label} · Reacquiring…`;this.changed();
+      }
+      if(!this.safe)this.fail('Target lost. Press Play to match again.');
+      await this.recoveryStop;
+      return;
+    }
+    if(this.recoverySince!==null && target?.state==='TRACKING') {
+      if(!this.safe || !this.fresh()){this.fail('Target lost. Press Play to match again.');return;}
+      const revision=this.revision;
+      await this.recoveryStop;
+      if(!this.session || revision!==this.revision)return;
+      const resume=this.recoveryResume;
+      this.recoverySince=null;this.recoveryResume=false;
+      this.status=`${this.label} · Reacquired`;this.changed();
+      if(resume)await this.resume(this.currentSettings.baseSpeed);
+      return;
+    }
     if(!this.fresh()){this.fail('Target lost. Press Play to match again.');return;}
     if(!this.driving || this.starting)return;
     if(!this.engine.followingSelectedTarget){this.fail('Target lost. Press Play to match again.');return;}

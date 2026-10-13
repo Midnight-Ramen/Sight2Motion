@@ -1,3 +1,4 @@
+import { NewProjectDialog } from './components/NewProjectDialog';
 import { SelectedTargetProgram } from './core/SelectedTargetProgram';
 import { SetupStatus } from './components/SetupStatus';
 import { BaseBehaviorCoordinator } from './core/BaseBehaviorCoordinator';
@@ -25,7 +26,7 @@ import {
   Check,
   ChevronDown,
   CircleHelp,
-  Copy,
+  LayoutTemplate,
   Download,
   Eye,
   FilePlus2,
@@ -77,7 +78,7 @@ import { ruleSource } from './core/types';
 import './styles.css';
 import './theme.css';
 import { ProjectTemplatePicker } from './components/ProjectTemplatePicker';
-import { selectProjectTemplate } from './core/ProjectTemplates';
+import { selectProjectTemplate, type ProjectTemplate, type TemplateBaseSetup } from './core/ProjectTemplates';
 import { setupReadiness, focusSetupSection, cameraGuidanceReady } from './core/SetupReadiness';
 const networkCameras = [1, 2, 3, 4].map(number => ({
   name: `Camera ${number}`,
@@ -86,6 +87,9 @@ const networkCameras = [1, 2, 3, 4].map(number => ({
 const defaultNetworkCameraUrl = networkCameras[0].url;
 export default function App() {
   const [navigationContainer, setNavigationContainer] = useState<HTMLDivElement | null>(null);
+  const [starter, setStarter] = useState<ProjectTemplate | null>(null);
+  const [templateSetup, setTemplateSetup] = useState<TemplateBaseSetup>();
+  const [creatingProject, setCreatingProject] = useState(false);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   useEffect(() => {
@@ -722,6 +726,9 @@ export default function App() {
     if ((p.visionProvider ?? 'yolo') !== providerKind || p.teachableMachineUrl !== project.teachableMachineUrl)
       resetModel(p.visionProvider ?? 'yolo');
     setTmUrlInput(p.teachableMachineUrl ?? '');
+    setStarter(null);
+    setSelectedTargetMode(false);
+    setTemplateSetup({ id: p.id, mode: 'None' });
     setProject(registerRuleSensors(p));
     setDirty(false);
     setSaved(null);
@@ -733,33 +740,17 @@ export default function App() {
       setDirty(false);
     }
   }
-  async function projectCommand(command: 'new' | 'duplicate' | 'save' | 'load' | 'export') {
-    if (command === 'new') { pause(); setChoosingTemplate(true); return; }
+  function saveProject() {
     try {
-      if (command === 'save') {
-        storage.export(project);
-        storage.save(project);
-        setDirty(false);
-        setNotice('Project file downloaded. Use Import to open it later.');
-      } else if (command === 'load') {
-        setSaved(storage.list());
-      } else if (command === 'export') storage.export(project);
-      else {
-        preserve();
-        const p = {
-                ...structuredClone(project),
-                id: crypto.randomUUID(),
-                name: `${project.name.slice(0, 90)} copy`,
-              };
-        await replaceProject(p);
-        setDirty(true);
-      }
+      storage.export(project);
+      storage.save(project);
+      setDirty(false);
+      setNotice('Project file downloaded. Use Open to open it later.');
     } catch {
-      setNotice(
-        'Your browser could not save or read projects. Export a JSON copy to keep your work.',
-      );
+      setNotice('Your browser could not save the project. Please try again.');
     }
   }
+  const openProjectFile = () => projectInput.current?.click();
   async function importFile(file: File) {
     try {
       if (file.size > 1_000_000) throw new Error();
@@ -815,40 +806,26 @@ export default function App() {
             <button
               title="New project"
               aria-label="New project"
-              onClick={() => projectCommand('new')}
+              onClick={() => setCreatingProject(true)}
             >
-              <FilePlus2 size={17} />
+              <FilePlus2 size={17} /> New
             </button>
             <button
-              title="Duplicate project"
-              aria-label="Duplicate project"
-              onClick={() => projectCommand('duplicate')}
+              title="Templates"
+              aria-label="Templates"
+              onClick={() => { pause(); setChoosingTemplate(true); }}
             >
-              <Copy size={17} />
+              <LayoutTemplate size={17} /> Templates
             </button>
-            <button onClick={() => projectCommand('load')}>
+            <button onClick={openProjectFile}>
               <FolderOpen size={16} />
               Open
             </button>
-            <button onClick={() => projectCommand('save')}>
+            <button onClick={saveProject}>
               <Save size={16} />
               Save project
             </button>
-            <details className="more-menu">
-              <summary aria-label="Import and export">
-                <ChevronDown size={16} />
-              </summary>
-              <div>
-                <button onClick={() => projectCommand('export')}>
-                  <Download size={15} />
-                  Export JSON
-                </button>
-                <button onClick={() => projectInput.current?.click()}>
-                  <Upload size={15} />
-                  Import JSON
-                </button>
-              </div>
-            </details>
+
           </div>
         </div>
 
@@ -1132,7 +1109,7 @@ export default function App() {
                 onReset={() => void resetProjectOutputs()}
                 onStop={stop}
               />
-              {robotMode === 'finch' && <ManualDrive selectedTargetProgram={profileFollow} coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onProgramChange={programChanged} onManualTakeover={() => { profileFollow.end(); baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
+              {robotMode === 'finch' && <ManualDrive templateSetup={templateSetup} selectedTargetProgram={profileFollow} coordinator={baseCoordinator} ruleSensors={pollingSensors(registerRuleSensors({ ...project, rules: project.rules.filter(rule => rule.enabled), sensorConfiguration: [] }).sensorConfiguration ?? [])} onProgramChange={programChanged} onManualTakeover={() => { profileFollow.end(); baseCoordinator.disarm(); aiRef.current = false; setAi(false); rules.reset(); }} navigationContainer={navigationContainer} roadVision={{items:detections,capturedAt:latestVision.current.capturedAt,classes:availableClasses,confidence:project.vision.confidence,ready:cameraOn&&modelReady,scope:project.id+':'+providerKind}} lineSensorProvider={finch.sensors} robot={robot} stopRevision={manualStopRevision} sensors={sensorState} engine={actions} connected={connected} running={ai && !baseCoordinator.enabled} busy={hardwareBusy} open={setupOpen === 'robot-panel'} />}
             </SetupSection>
             <SetupSection id="sensors-panel" title="Sensors" summary={`${project.sensorConfiguration?.length ?? 0} configured · ${ROBOTS[robotMode].name}`} icon={<SlidersHorizontal size={18} />} open={setupOpen === 'sensors-panel'} onToggle={() => toggleSetup('sensors-panel')}>
               <SensorInputs resetKey={`${project.id}:${sensorDisplayRevision}`} robotType={robotMode} connected={connected} configuration={pollingSensors(project.sensorConfiguration ?? [])} state={sensorState}
@@ -1197,6 +1174,7 @@ export default function App() {
           </div>
           </div>
         <section id="rules" className="rules-section" tabIndex={-1}>
+          {starter?.steps && <details className="starter-guidance"><summary>{starter.name} · Next steps</summary><ol className="template-steps">{starter.steps.map(step => <li key={step}>{step}</li>)}</ol></details>}
           <div ref={setNavigationContainer} />
           <div id="rules-workspace">
           <div className="section-heading">
@@ -1291,12 +1269,25 @@ export default function App() {
           e.target.value = '';
         }}
       />
+      {creatingProject && <NewProjectDialog onClose={() => setCreatingProject(false)} onCreate={async name => {
+        preserve();
+        pause();
+        await replaceProject({ ...makeProject(), name, rules: [], selectedClasses: [] });
+        setDirty(true);
+        setNotice('');
+        setCreatingProject(false);
+        requestAnimationFrame(() => focusSetupSection('rules'));
+      }} />}
       {choosingTemplate && <ProjectTemplatePicker onClose={() => setChoosingTemplate(false)} onSelect={async (template, ports) => {
         preserve();
         await selectProjectTemplate(template, ports, replaceProject);
+        setStarter(template);
+        setSelectedTargetMode(!!template.selectedTarget);
+        setTemplateSetup({ id: crypto.randomUUID(), mode: template.baseMode ?? 'None' });
         setDirty(true);
         setChoosingTemplate(false);
-        setNotice(template.helper ?? 'Project ready. Connect your camera and robot when you are ready. Rules are paused.');
+        setNotice('');
+        requestAnimationFrame(() => focusSetupSection('rules'));
         // Use the template's provider explicitly: this handler may still close over the previous project.
         if (template.id === 'follow' && (providerKind !== 'yolo' || !modelReady))
           await loadModel(undefined, 'yolo');
@@ -1391,7 +1382,7 @@ export default function App() {
                     No saved projects yet. Save your first experiment or import a JSON file.
                   </div>
                 )}
-                <button onClick={() => projectInput.current?.click()}>
+                <button onClick={openProjectFile}>
                   <Upload size={16} />
                   Import project
                 </button>

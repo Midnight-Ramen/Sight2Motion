@@ -51,7 +51,7 @@ it('valid enabled rules complete Rules, disabled rules do not', () => {
   expect(setupReadiness(p, ready).rules).toBe(false);
 });
 it('templates require robot attachment for the connection checkmark', () => {
-  const p = PROJECT_TEMPLATES[0].createProject();
+  const p = PROJECT_TEMPLATES.find(template => template.id === 'follow')!.createProject();
   expect(setupReadiness(p, { ...ready, usableFrame: false, connected: false })).toMatchObject({ camera: false, vision: true, robot: false, rules: true, play: false });
   expect(setupReadiness(p, { ...ready, connected: false }).helper).toBe('Next: Connect your robot.');
 });

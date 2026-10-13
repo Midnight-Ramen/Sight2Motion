@@ -38,12 +38,12 @@ it('configurable threshold rejects weak matching without refreshing target fresh
  const tracker=new AppearanceTracker();tracker.initializeProfile(profile,false,width,height);
  expect(tracker.update(frame(false,30),100,width,height)).toBeNull();expect(tracker.capturedAt).toBe(-Infinity);
  expect(tracker.update(frame(),200,width,height)?.state).toBe('TRACKING');
- expect(tracker.update(frame(false,30),300,width,height)?.state).toBe('TEMPORARILY_LOST');expect(tracker.capturedAt).toBe(200);
+ expect(tracker.update(frame(false,30),300,width,height)?.state).toBe('REACQUIRING');expect(tracker.capturedAt).toBe(200);
 });
-it('lost profiles cannot auto-reacquire after the unchanged stale deadline',()=>{
+it('profiles search for five seconds then remain terminally lost',()=>{
  const tracker=new AppearanceTracker();tracker.initializeProfile(saveTargetView([],'Robot',reference())[0],false,width,height);
- tracker.update(frame(),100,width,height);expect(tracker.age(900)?.targetLost).toBe(true);
- expect(tracker.update(frame(),1000,width,height)?.targetLost).toBe(true);
+ tracker.update(frame(),100,width,height);expect(tracker.age(900)?.state).toBe('REACQUIRING');expect(tracker.age(5100)?.targetLost).toBe(true);
+ expect(tracker.update(frame(),5200,width,height)?.targetLost).toBe(true);
 });
 it('legacy saved target names migrate without fabricating visual references',()=>{
  const profiles=migrateTargetProfiles(undefined,['My cup','My cup']);
@@ -72,4 +72,33 @@ it('the unchanged FollowController consumes mirrored profile targets',()=>{
  expect(b.horizontalError).toBeCloseTo(-a.horizontalError);
  const l=trackedFollowCommand(a,TRACKED_FOLLOW_DEFAULTS),r=trackedFollowCommand(b,TRACKED_FOLLOW_DEFAULTS);
  expect(l.left).toBeLessThan(l.right);expect(r.left).toBeGreaterThan(r.right);
+});
+
+function displaced(side=false,x=70,y=45,weak=0,duplicate=false) {
+ const source=frame(side,weak),data=new Uint8ClampedArray(width*height*4).fill(30);
+ for(let dy=0;dy<24;dy++)for(let dx=0;dx<20;dx++)for(let c=0;c<4;c++) {
+  data[((y+dy)*width+x+dx)*4+c]=source.data[((25+dy)*width+30+dx)*4+c];
+  if(duplicate)data[((5+dy)*width+5+dx)*4+c]=source.data[((25+dy)*width+30+dx)*4+c];
+ }
+ return {data,width,height};
+}
+it.each([false,true])('global matching finds a far target with alternate view %s only after three stable frames',side=>{
+ const profile=saveTargetView(saveTargetView([],'Robot',reference()),'Robot',reference(true))[0];
+ const tracker=new AppearanceTracker();tracker.initializeProfile(profile,false,width,height);
+ tracker.update(frame(),0,width,height);
+ expect(tracker.update(displaced(side),100,width,height)?.state).toBe('REACQUIRING');
+ expect(tracker.update(displaced(side),200,width,height)?.state).toBe('REACQUIRING');
+ expect(tracker.update(displaced(side),300,width,height)?.state).toBe('REACQUIRING'); // bounded cadence
+ expect(tracker.update(displaced(side),500,width,height)?.state).toBe('REACQUIRING');
+ const result=tracker.update(displaced(side),800,width,height)!;
+ expect(result.state).toBe('TRACKING');expect(result.boundingBox.x).toBeGreaterThan(60);
+});
+it('weak or ambiguous global matches never regain tracking',()=>{
+ for(const image of [displaced(false,70,45,90),displaced(false,70,45,0,true)]) {
+ const tracker=new AppearanceTracker();tracker.initializeProfile(saveTargetView([],'Robot',reference())[0],false,width,height);
+ tracker.update(frame(),0,width,height);
+ tracker.update({data:new Uint8ClampedArray(width*height*4).fill(30),width,height},50,width,height);
+ for(let t=100;t<2000;t+=300){const result=tracker.update(image,t,width,height);expect(result?.state).toBe('REACQUIRING');}
+ expect(tracker.capturedAt).toBe(0);
+ }
 });

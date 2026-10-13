@@ -5,7 +5,7 @@ import type { SelectedSegment } from './SegmentationGeometry';
 import { hasBoundingBox, type Detection, type VisionResult } from './types';
 
 type Box = SelectedSegment['boundingBox'];
-export type TrackingState = 'IDLE' | 'SAM_SELECTED' | 'MATCHING' | 'TRACKING' | 'TEMPORARILY_LOST' | 'LOST';
+export type TrackingState = 'IDLE' | 'SAM_SELECTED' | 'MATCHING' | 'TRACKING' | 'TEMPORARILY_LOST' | 'REACQUIRING' | 'LOST';
 export interface SelectedTarget extends SelectedSegment { selectedAt: number; initialBoundingBox: Box }
 export interface TrackedTarget {
   lastSeenAt?: number;

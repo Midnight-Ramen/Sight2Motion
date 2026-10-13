@@ -1,3 +1,4 @@
+import type { TemplateBaseSetup } from '../core/ProjectTemplates';
 import type { SelectedTargetProgram } from '../core/SelectedTargetProgram';
 import { NumericInput } from './NumericInput';
 import { AvoidanceTurnDiagnostics, AVOID_TURN_POWER } from '../core/AvoidanceTurnDiagnostics';
@@ -17,7 +18,8 @@ import { ObstacleAvoidance, OBSTACLE_AVOIDANCE, type AvoidancePhase } from '../c
 import { NavigationEncoderBarrier } from '../core/NavigationEncoderBarrier';
 import { NumericSlider } from './NumericSlider';
 
-export function BaseDrivingControls({ engine, robot, sensors, provider, available, rulesRunning, speed, recording, cancelRef, coordinator, selectedTargetProgram, ruleSensors, onActiveChange, onProgramChange }: {
+export function BaseDrivingControls({ templateSetup, engine, robot, sensors, provider, available, rulesRunning, speed, recording, cancelRef, coordinator, selectedTargetProgram, ruleSensors, onActiveChange, onProgramChange }: {
+  templateSetup?: TemplateBaseSetup;
   selectedTargetProgram?: SelectedTargetProgram;
   engine: ActionEngine; robot: RobotAdapter; sensors: SensorState; provider?: SensorProvider;
   available: boolean; rulesRunning: boolean; speed: number; recording: EncoderRecording; cancelRef: MutableRefObject<(() => void) | null>;
@@ -175,6 +177,12 @@ export function BaseDrivingControls({ engine, robot, sensors, provider, availabl
     });
   };
   const changeMode = (value: string) => { selectedTargetProgram?.end(); coordinator.disarm(); cancel(); setMode(value); setStatus(''); };
+  // Project creation configures existing controls only; Play remains explicit.
+  useEffect(() => {
+    if (!templateSetup) return;
+    changeMode(templateSetup.mode);
+    setBaseSpeed(20); setEmergency(true); setEmergencyDistance(10); setLineEvent('stop');
+  }, [templateSetup]);
   useEffect(() => {
     if(mode === 'Follow selected target' && !selectedTargetProgram?.configured) changeMode('None');
   }, [mode, selectedTargetProgram?.configured]);

@@ -66,3 +66,44 @@ it('every template round-trips through existing storage without template metadat
     expect(restored).not.toHaveProperty('templateId');
   }
 });
+
+const starters = ['ai-reaction', 'ai-sorting', 'smart-gate', 'sensor-vision', 'self-driving', 'follow-target', 'line-vehicle'];
+it('classroom starters have concise purpose and next steps', () => {
+  for (const id of starters) { const t = template(id); expect(t.description).toBeTruthy(); expect(t.steps!.length).toBeGreaterThanOrEqual(3); expect(t.steps!.length).toBeLessThanOrEqual(5); }
+});
+it('reaction and combined scaffolds invent neither classes nor actions nor input ports', () => {
+  for (const id of ['ai-reaction', 'sensor-vision', 'self-driving']) {
+    const p = template(id).createProject();
+    expect(p.rules[0].className).toBe(''); expect(p.rules[0].actions).toEqual([]);
+    expect(p.selectedClasses).toEqual([]); expect(p.sensorConfiguration).toEqual([]);
+  }
+  expect(template('sensor-vision').createProject().rules[0].source).toBe('vision-sensor');
+});
+it('sorting and gate use explicitly selected ports and existing servo/Wait/Return Home', () => {
+  for (const id of ['ai-sorting', 'smart-gate']) {
+    expect(() => template(id).createProject()).toThrow();
+    const p = template(id).createProject({output: 3, sensor: 2});
+    expect(p.rules[0].actions.map(a => a.kind)).toEqual(['positionServo', 'wait']);
+    expect(p.rules[0].actions[0]).toMatchObject({port:3,returnHome:true});
+    expect(p.servoHome).toEqual({port:3,angle:90});
+    expect(p.rules[0].className).toBe(''); expect(p.teachableMachineUrl).toBeUndefined();
+  }
+  expect(template('ai-sorting').createProject({output:2}).visionProvider).toBe('teachable-machine');
+  expect(template('smart-gate').createProject({output:3,sensor:2}).rules[0].sensorConditions?.[0].sensorId).toBe('distance:2');
+});
+it('driving presets only select existing base modes and follow does not invent a target', () => {
+  expect(template('self-driving').baseMode).toBe('Cruise Forward');
+  expect(template('line-vehicle').baseMode).toBe('Line Follow');
+  expect(template('follow-target').selectedTarget).toBe(true);
+  const p=template('follow-target').createProject();
+  expect(p.rules).toEqual([]); expect(p.targetProfiles).toBeUndefined(); expect(p.selectedClasses).toEqual([]);
+});
+it('unfinished starter projects survive repeated save/import without fake empty classes', () => {
+  for(const id of starters) {
+    const original=template(id).createProject({output:2,sensor:3});
+    const once=parseProject(JSON.stringify(original));
+    const twice=parseProject(JSON.stringify(once));
+    expect(twice).toEqual(once); expect(twice.selectedClasses).toEqual([]);
+    expect(twice.rules.map(r=>r.actions.map(a=>a.kind))).toEqual(original.rules.map(r=>r.actions.map(a=>a.kind)));
+  }
+});
