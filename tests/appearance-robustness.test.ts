@@ -30,7 +30,7 @@ it.each([.65,1.25])('normalized representation tolerates exposure gain %s and ch
  expect(JSON.stringify(profile)).toBe(saved);
 });
 it('adaptive radius responds to object size, elapsed time, and recent movement',()=>{
- const {tracker}=setup();tracker.update(frame(),0,width,height);const first=tracker.diagnostics.searchRadius;
+ const {tracker}=setup();tracker.update(frame(),-100,width,height);tracker.update(frame(),0,width,height);const first=tracker.diagnostics.searchRadius;
  tracker.update(frame({x:55}),150,width,height);
  expect(tracker.update(frame({x:78}),350,width,height)?.state).toBe('TRACKING');
  expect(tracker.diagnostics.searchRadius).toBeGreaterThan(first);

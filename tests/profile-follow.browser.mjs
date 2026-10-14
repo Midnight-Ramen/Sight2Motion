@@ -6,7 +6,11 @@ const context=await browser.newContext({viewport:{width:1440,height:1000}});
 
 const page=await context.newPage();
 await page.addInitScript(()=>{
+ window.profileLabels=[];
+ const nativeFillText=CanvasRenderingContext2D.prototype.fillText;
+ CanvasRenderingContext2D.prototype.fillText=function(text,...args){if(this.canvas.classList.contains('tracking-overlay'))window.profileLabels.push(text);return nativeFillText.call(this,text,...args);};
  window.profileMotion={paths:[],distance:40};
+ window.profileSAM={encodes:0,decodes:0};
  const originalFetch=window.fetch;
  window.fetch=async(url,options)=>{
   if(!String(url).startsWith('http://127.0.0.1:30061/'))return originalFetch(url,options);
@@ -18,10 +22,12 @@ await page.addInitScript(()=>{
   constructor(url,options){if(!String(url).includes('MobileSAM.worker'))return new NativeWorker(url,options);this.width=320;this.height=240;this.closed=false;}
   postMessage(message){
    let result=true;
-   if(message.kind==='encode'){this.width=message.bitmap.width;this.height=message.bitmap.height;}
+   if(message.kind==='encode'){window.profileSAM.encodes++;this.width=message.bitmap.width;this.height=message.bitmap.height;}
    if(message.kind==='decode'){
-    const mask=new Uint8Array(this.width*this.height);for(let y=70;y<130;y++)for(let x=90;x<150;x++)mask[y*this.width+x]=1;
-    result={mask,width:this.width,height:this.height,boundingBox:{x:90,y:70,width:60,height:60},centroid:{x:120,y:100},area:3600};
+    window.profileSAM.decodes++;
+    const sx=this.width/320,sy=this.height/240;
+    const mask=new Uint8Array(this.width*this.height);for(let y=Math.round(70*sy);y<Math.round(130*sy);y++)for(let x=Math.round(90*sx);x<Math.round(150*sx);x++)mask[y*this.width+x]=1;
+    result={mask,width:this.width,height:this.height,boundingBox:{x:90*sx,y:70*sy,width:60*sx,height:60*sy},centroid:{x:120*sx,y:100*sy},area:3600*sx*sy};
    }
    setTimeout(()=>{if(!this.closed)this.onmessage?.({data:{result}});},10);
   }
@@ -77,6 +83,30 @@ try{
  expect(project.targetProfiles[0].references[0].crop.image).toMatch(/^data:image\/png;base64,/);
  const imported=await page.evaluate(async project=>{const {parseProject}=await import('/src/core/ProjectStorage.ts');return parseProject(JSON.stringify(project));},project);
  expect(imported.targetProfiles).toEqual(project.targetProfiles);
+ // Starting with no visible target must keep the profile session searching live frames.
+ await page.evaluate(()=>window.profileFixture.setHidden(true));await page.waitForTimeout(150);
+ await page.getByRole('button',{name:'Track target',exact:true}).click();
+ await page.locator('.target-advanced > summary').click();
+ const diagnostics=page.getByLabel('Target matching diagnostics');
+ await expect(diagnostics).toContainText('State: MATCHING');
+ await expect(diagnostics).toContainText('Search: global');
+ await expect(diagnostics).toContainText('Tracking active: yes');
+ await expect(diagnostics).toContainText(/Raw candidates: [1-9][0-9]*/);
+ const firstSequence=Number((await diagnostics.textContent()).match(/Matcher frame sequence: (\d+)/)[1]);
+ await expect.poll(async()=>Number((await diagnostics.textContent()).match(/Matcher frame sequence: (\d+)/)[1])).toBeGreaterThan(firstSequence);
+ await page.evaluate(()=>window.profileFixture.setHidden(false));
+ await expect(diagnostics).toContainText('State: TRACKING');
+ const outline=page.getByLabel('Tracked target outline and center');await expect(outline).toBeVisible();
+ await expect.poll(()=>outline.evaluate(c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<d.length;i+=4)if(d[i+1]>180&&d[i]<100&&d[i+3]>0)n++;return n;})).toBeGreaterThan(0);
+ await expect.poll(()=>page.evaluate(()=>window.profileLabels.some(text=>/^Red robot · [0-9]+%$/.test(text)))).toBe(true);
+ await page.evaluate(()=>window.profileFixture.setHidden(true));
+ await expect(diagnostics).toContainText('State: REACQUIRING');
+ await expect(diagnostics).toContainText('State: LOST',{timeout:15000});
+ expect(await outline.evaluate(c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i])n++;return n;})).toBe(0);
+ await page.evaluate(()=>window.profileFixture.setHidden(false));
+ await page.getByRole('button',{name:'Stop tracking',exact:true}).click();
+ await page.locator('.target-advanced > summary').click();
+ console.log('Track target lifecycle passed: initial global search, nonzero work, fresh-frame progression, and later acquisition.');
  const mode=page.getByLabel('Base driving behavior',{exact:true});
  await expect(mode.locator('option',{hasText:'Follow selected target'})).toHaveCount(1);
  await expect(page.getByRole('button',{name:'Follow selected target',exact:true})).toHaveCount(0);
@@ -101,8 +131,12 @@ try{
  await page.evaluate(()=>window.profileFixture.setHidden(true));
  await expect(page.locator('.target-live-status')).toContainText('Reacquiring');
  const held=await moving();await page.waitForTimeout(500);expect(await moving()).toBe(held);
+ const beforeVerification=await page.evaluate(()=>({...window.profileSAM}));
  await page.evaluate(()=>window.profileFixture.setHidden(false));
  await expect(page.locator('.target-live-status')).toContainText('Reacquired');
+ const afterVerification=await page.evaluate(()=>({...window.profileSAM}));
+ expect(afterVerification.encodes-beforeVerification.encodes).toBeGreaterThanOrEqual(3);
+ expect(afterVerification.decodes-beforeVerification.decodes).toBeGreaterThanOrEqual(3);
  await expect.poll(moving).toBeGreaterThan(held);
  await page.evaluate(()=>window.profileFixture.setHidden(true));
  await expect(play).toBeVisible({timeout:7000});

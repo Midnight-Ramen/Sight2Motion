@@ -1,3 +1,4 @@
+import { createSAMVerifier } from '../core/SAMCandidateVerification';
 import type { SelectedTargetProgram } from '../core/SelectedTargetProgram';
 import { mobileSAMService } from '../core/MobileSAMService';
 import { Scan, Plus } from 'lucide-react';
@@ -67,6 +68,7 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
   const appearanceActive = useRef(false);
   const sampleCanvas = useRef<HTMLCanvasElement | null>(null);
   const lastVersion = useRef(-1);
+  const [, refreshTracking] = useState(0);
   function pixels(frame: CanvasImageSource, width: number, height: number) {
     const c = sampleCanvas.current ??= document.createElement('canvas');
     c.width = 160; c.height = Math.round(height * 160 / width);
@@ -117,9 +119,10 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
           setTarget(appearance.update(pixels(frame, camera.width, camera.height), performance.now(), camera.width, camera.height));
           trackedAt.current = appearance.capturedAt;
         } else setTarget(appearance.age());
+        refreshTracking(value=>value+1);
       } catch { appearance.stop(); appearanceActive.current = false; setTarget(null); setStatus('Tracking stopped. Capture a fresh frame.'); }
     }, 100);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); appearance.stop(); appearanceActive.current=false; };
   }, [tracker, appearance, camera, available]);
   useEffect(() => {
     const c = trackingCanvas.current;
@@ -130,8 +133,14 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     if (target.targetLost) return;
     const b = target.boundingBox;
     ctx.strokeStyle = target.state === 'TRACKING' ? '#38e69b' : '#ffc857';
-    ctx.lineWidth = 3; ctx.setLineDash(target.state === 'TRACKING' ? [] : [8, 6]);
+    ctx.lineWidth = Math.max(3,c.width/220); ctx.setLineDash(target.state === 'TRACKING' ? [] : [8, 6]);
     ctx.strokeRect(b.x, b.y, b.width, b.height);
+    const label=target.state==='TRACKING'?`${target.displayName || 'Target'} · ${Math.round(target.trackingConfidence*100)}%`:'Reacquiring…';
+    const fontSize=Math.max(14,Math.round(c.width/40));ctx.font=`600 ${fontSize}px system-ui`;
+    const labelWidth=Math.min(c.width,ctx.measureText(label).width+12),labelHeight=fontSize+10;
+    const labelX=Math.max(0,Math.min(b.x,c.width-labelWidth)),labelY=Math.max(0,b.y-labelHeight);
+    ctx.fillStyle=target.state==='TRACKING'?'#38e69b':'#ffc857';ctx.fillRect(labelX,labelY,labelWidth,labelHeight);
+    ctx.fillStyle='#10271d';ctx.fillText(label,labelX+6,labelY+fontSize+1,labelWidth-12);
     ctx.beginPath(); ctx.moveTo(target.centerX - 10, target.centerY); ctx.lineTo(target.centerX + 10, target.centerY);
     ctx.moveTo(target.centerX, target.centerY - 10); ctx.lineTo(target.centerX, target.centerY + 10); ctx.stroke();
   }, [target, camera]);
@@ -279,23 +288,24 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
     finally{if(version===generation.current){locked.current=false;setBusy(false);}}
   }
   async function anotherView() { setCaptureReady(true); await close(); setStatus('Reposition the target, then Capture frame.'); }
-  function startProfileTracking(): TrackedTarget | null {
+  function startProfileTracking(retryRequested=false): TrackedTarget | null {
     if(!profile?.references.length||active||busy||!available||!camera.frame)return null;
     try {
       tracker.stop();const frame=pixels(camera.frame,camera.width,camera.height);
-      appearance.initializeProfile(profile,mirror,frame.width,frame.height);
+      const retry=retryRequested || appearance.state==='LOST';
+      if(!retry || !appearanceActive.current)appearance.initializeProfile(profile,mirror,frame.width,frame.height,createSAMVerifier(()=>service.current,profile.references));
+      if(retry)appearance.retry(performance.now());
       const next=appearance.update(frame,performance.now(),camera.width,camera.height);
-      if(!next){appearance.stop();setTarget(null);setStatus('No confident match. Adjust the view or capture another reference.');return null;}
       appearanceActive.current=true;lastVersion.current=camera.frameVersion;
       trackedAt.current=appearance.capturedAt;setTarget(next);
-      setStatus('');return next;
+      setStatus(next ? '' : appearance.state==='REACQUIRING'?'Reacquiring…':'Matching…');return next;
     }catch(error){appearance.stop();appearanceActive.current=false;setTarget(null);setStatus(error instanceof Error?error.message:'Tracking could not start.');return null;}
   }
   const sourceOwner=useRef(Symbol('MobileSAM profile source'));
   useEffect(() => {
     if(!profileProgram)return;
     const owner=sourceOwner.current;
-    profileProgram.setSource(owner,{profile,canMatch:()=>available && !active && !busy && !!camera.frame,match:startProfileTracking,cancelMatch:stopProfileTracking});
+    profileProgram.setSource(owner,{profile,canMatch:()=>available && !active && !busy && !!camera.frame,match:startProfileTracking,recoveryPending:()=>appearance.verificationPending,cancelMatch:stopProfileTracking});
     return () => profileProgram.clearSource(owner);
   },[profileProgram,profile,available,active,busy,camera,mirror]);
   function stopProfileTracking() {appearanceActive.current=false;appearance.stop();tracker.stop();setTarget(null);}
@@ -326,12 +336,12 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
         </div>)}
         <button className="target-add-view" aria-label="Capture another view" title="Capture another view" disabled={busy || !available} onClick={() => void anotherView()}><Plus size={18}/></button>
       </div>
-      <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && !target?.targetLost} onClick={startProfileTracking}>Track target</button>
-      {target && <button onClick={() => { stopProfileTracking();setStatus('Tracking stopped.'); }}>Stop tracking</button>}
+      <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && appearance.state!=='LOST'} onClick={() => startProfileTracking()}>Track target</button>
+      {(target || appearanceActive.current) && <button onClick={() => { stopProfileTracking();setStatus('Tracking stopped.'); }}>Stop tracking</button>}
     </>}
     <span role="status" className="target-live-status">{!active && target
       ? `${target.displayName} · Match ${Math.round((appearanceActive.current ? appearance.diagnostics.bestMatch : target.trackingConfidence)*100)}%${appearanceActive.current && appearance.diagnostics.winningView ? ` · view ${appearance.diagnostics.winningView}` : ''} · ${target.targetLost ? 'Lost' : target.state === 'REACQUIRING' ? 'Reacquiring…' : target.state === 'TRACKING' ? appearance.reacquired ? 'Reacquired' : 'Tracking' : 'Uncertain'}`
-      : modelStatus !== 'MobileSAM ready' ? modelStatus : status || modelStatus}</span>
+      : appearanceActive.current && appearance.state==='LOST' ? `${profile?.label ?? 'Target'} · Lost` : modelStatus !== 'MobileSAM ready' ? modelStatus : status || modelStatus}</span>
     <details className="target-advanced"><summary>Advanced target settings</summary>
       <div className="target-advanced-body">
         {!active && <label>Target <select aria-label="Target profile" value={profile?.label ?? ''} disabled={busy} onChange={e => {setCaptureReady(false);void close();setDisplayName(e.target.value);}}>
@@ -340,11 +350,14 @@ export function ObjectSelection({ camera, available, mirror, detections, visionU
         {active && <label>Selection mode <select aria-label="Selection mode" disabled={busy} value={mode} onChange={e => setMode(e.target.value as typeof mode)}>
           <option value="positive">Add to object</option><option value="negative">Remove from object</option><option value="box">Box Select</option>
         </select></label>}
-        {appearanceActive.current && <small className="appearance-diagnostics" aria-label="Target matching diagnostics">State: {target?.state ?? 'MATCHING'} · Best match: {Math.round(appearance.diagnostics.bestMatch*100)}% · View: {appearance.diagnostics.winningView || '—'} · Search: {appearance.diagnostics.searchMode} · Radius: {Math.round(appearance.diagnostics.searchRadius)} px · Scale: {appearance.diagnostics.candidateScale.toFixed(2)} · Margin: {appearance.diagnostics.margin.toFixed(2)} · Search time: {appearance.diagnostics.searchMs.toFixed(1)} ms</small>}
+        {appearanceActive.current && <small className="appearance-diagnostics" aria-label="Target matching diagnostics">State: {appearance.state} · Camera frame sequence: {camera.frameVersion} · Matcher frame sequence: {appearance.frameSequence} · Tracking active: {appearanceActive.current ? 'yes' : 'no'} · Search requested: {appearance.searchRequested ? 'yes' : 'no'} · Last search timestamp: {appearance.lastSearchAt === null ? '—' : `${appearance.lastSearchAt.toFixed(1)} ms`} · Recovery elapsed: {appearance.recoveryElapsed().toFixed(0)} ms · Recovery remaining: {appearance.recoveryRemaining().toFixed(0)} ms · Recovery start timestamp: {appearance.recoveryStartedAt?.toFixed(1) ?? '—'} · Retry attempt #: {appearance.retryAttempt} · Verification requested: {appearance.verificationRequested?'yes':'no'} · Verification started: {appearance.verificationStarted?'yes':'no'} · Best match: {Math.round(appearance.diagnostics.bestMatch*100)}% · View: {appearance.diagnostics.winningView || '—'} · Search: {appearance.diagnostics.searchMode} · Radius: {Math.round(appearance.diagnostics.searchRadius)} px · Scale: {appearance.diagnostics.candidateScale.toFixed(2)} · Second distinct: {appearance.diagnostics.secondDistinct === null ? '—' : `${Math.round(appearance.diagnostics.secondDistinct*100)}%`} · Distinct margin: {appearance.diagnostics.margin.toFixed(2)} · Raw candidates: {appearance.diagnostics.rawCandidates} · Candidate clusters: {appearance.diagnostics.clusters} · Verified raw: {appearance.verifiedGeometry.length} · Physical groups: {appearance.diagnostics.verifiedHypotheses} · Merged/absorbed: {appearance.diagnostics.mergedDuplicates} · Hypothesis drift: {appearance.diagnostics.hypothesisDrift.toFixed(1)} px · Stable: {appearance.diagnostics.stableCount}/{REACQUISITION.stableFrames} · Coarse shortlist: {appearance.diagnostics.coarseCandidates} · SAM verified: {appearance.diagnostics.verifiedCandidates} · Verified best: {Math.round(appearance.diagnostics.verifiedBest*100)}% · Verified second: {appearance.diagnostics.verifiedSecond === null ? '—' : `${Math.round(appearance.diagnostics.verifiedSecond*100)}%`} · Stability: {appearance.diagnostics.resetReason || 'same spatial hypothesis'} · SAM: {appearance.diagnostics.samMs.toFixed(1)} ms · Cycle: {appearance.diagnostics.cycleMs.toFixed(1)} ms · {appearance.diagnostics.verificationStatus} · Search time: {appearance.diagnostics.searchMs.toFixed(1)} ms</small>}
+        {appearanceActive.current && appearance.verifiedGeometry.length>0 && <details className="verified-candidate-geometry"><summary>Verified candidate geometry (matcher-frame pixels)</summary>
+          <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(appearance.verifiedGeometry,null,2)}</pre>
+        </details>}
         <small>Reacquisition: up to {REACQUISITION.windowMs / 1000}s · at least {Math.round(REACQUISITION.confidence * 100)}% match · {REACQUISITION.stableFrames} stable matches · {REACQUISITION.intervalMs}ms minimum search interval.</small>
         {profile && <label>Match threshold %<NumericSlider aria-label="Target match threshold" min={1} max={100} step={1} value={Math.round(profile.matchThreshold*100)} disabled={busy || appearanceActive.current}
           onChange={e => updateProfiles(profiles.map(p => p.label===profile.label ? {...p,matchThreshold:+e.target.value/100} : p))} /></label>}
-        {!active && <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && !target?.targetLost} onClick={startProfileTracking}>Retry match</button>}
+        {!active && <button disabled={!available || busy || !profile?.references.length || appearanceActive.current && appearance.state!=='LOST'} onClick={() => startProfileTracking(true)}>Retry match</button>}
         {profile && <button disabled={busy} onClick={() => {stopProfileTracking();updateProfiles(profiles.map(p => p.label===profile.label ? {...p,references:[]} : p));setStatus('Profile views cleared.');}}>Clear target profile</button>}
         {modelStatus.includes('unavailable') && <button onClick={() => void loadModel()}>Retry MobileSAM loading</button>}
         <small>{selected ? `Selected area: ${selected.area} pixels · ${prompts.points.length} points` : 'Save project to keep reference views.'}</small>

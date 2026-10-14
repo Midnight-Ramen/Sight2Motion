@@ -7,6 +7,7 @@ import type { TargetProfile } from './TargetProfiles';
 export interface SelectedTargetSource {
   profile?: TargetProfile;
   cancelMatch?: () => void;
+  recoveryPending?: () => boolean;
   canMatch: () => boolean;
   match: () => TrackedTarget | null;
 }
@@ -60,7 +61,7 @@ export class SelectedTargetProgram {
   }
   get safe() {
     return this.session && this.ready && (this.recoverySince!==null
-      ? performance.now()-this.recoverySince<REACQUISITION.windowMs && !this.target?.targetLost
+      ? (performance.now()-this.recoverySince<REACQUISITION.windowMs || !!this.source?.recoveryPending?.() || this.target?.state==='TRACKING' && this.fresh()) && !this.target?.targetLost
       : this.fresh());
   }
   /** Only an explicit global Play creates a fresh match session. */

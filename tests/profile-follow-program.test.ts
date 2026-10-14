@@ -123,3 +123,24 @@ it('ending a recovery cancels matching and prevents later auto-resume',async()=>
  s.program.end();s.coordinator.disarm();await settle();
  expect(cancelMatch).toHaveBeenCalled();expect(s.tracker.age()).toBeNull();s.show();await s.run(1000);expect(s.engine.followingSelectedTarget).toBe(false);
 });
+
+it('an admitted verification keeps recovery stopped and armed past deadline until completion; STOP remains authoritative',async()=>{
+ const s=await setup();let pending=true;
+ s.program.setSource(Symbol('pending'),{...s.source,recoveryPending:()=>pending});
+ s.coordinator.startProgram();await settle();await s.run();
+ const lost={...s.tracker.age()!,state:'REACQUIRING' as const,trackingConfidence:0};
+ await s.program.publish(lost,s.tracker.capturedAt,750);await vi.advanceTimersByTimeAsync(5100);
+ await s.program.publish(lost,s.tracker.capturedAt,750);expect(s.program.safe).toBe(true);expect(s.program.armed).toBe(true);expect(s.robot.state.left).toBe(0);expect(s.robot.state.right).toBe(0);
+ pending=false;await s.program.publish({...lost,state:'LOST',targetLost:true},s.tracker.capturedAt,750);expect(s.program.armed).toBe(false);
+});
+
+it('a fresh completed recovery result can resume after an admitted cycle crosses the deadline',async()=>{
+ const s=await setup();let pending=true;s.program.setSource(Symbol('pending'),{...s.source,recoveryPending:()=>pending});
+ s.coordinator.startProgram();await settle();await s.run();const original=s.tracker.age()!;
+ await s.program.publish({...original,state:'REACQUIRING',trackingConfidence:0},s.tracker.capturedAt,750);
+ await vi.advanceTimersByTimeAsync(5100);pending=false;
+ const at=performance.now()-100;
+ await s.program.publish({...original,state:'TRACKING',lastSeenAt:at},at,750);await settle();
+ expect(s.program.armed).toBe(true);expect(s.engine.followingSelectedTarget).toBe(true);expect(s.abort).not.toHaveBeenCalled();
+ s.program.end();await s.engine.stop();expect(s.program.armed).toBe(false);
+});

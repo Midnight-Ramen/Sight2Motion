@@ -31,19 +31,19 @@ it('best-of-N accepts a side view that the front-only template rejects',()=>{
  const tracker=new AppearanceTracker();tracker.initializeProfile(profile,false,width,height);
  const matched=tracker.update(frame(true),100,width,height)!;
  expect(matched.state).toBe('TRACKING');expect(matched.displayName).toBe('Robot');expect(matched.trackingConfidence).toBeCloseTo(1);
- expect(tracker.update(frame(),200,width,height)?.state).toBe('TRACKING');
+ expect(tracker.update(frame(),400,width,height)?.state).toBe('TRACKING');
 });
 it('configurable threshold rejects weak matching without refreshing target freshness',()=>{
  const profile={...saveTargetView([],'Robot',reference())[0],matchThreshold:.99};
  const tracker=new AppearanceTracker();tracker.initializeProfile(profile,false,width,height);
  expect(tracker.update(frame(false,30),100,width,height)).toBeNull();expect(tracker.capturedAt).toBe(-Infinity);
- expect(tracker.update(frame(),200,width,height)?.state).toBe('TRACKING');
- expect(tracker.update(frame(false,30),300,width,height)?.state).toBe('REACQUIRING');expect(tracker.capturedAt).toBe(200);
+ expect(tracker.update(frame(),400,width,height)?.state).toBe('TRACKING');
+ expect(tracker.update(frame(false,30),500,width,height)?.state).toBe('REACQUIRING');expect(tracker.capturedAt).toBe(400);
 });
 it('profiles search for five seconds then remain terminally lost',()=>{
  const tracker=new AppearanceTracker();tracker.initializeProfile(saveTargetView([],'Robot',reference())[0],false,width,height);
- tracker.update(frame(),100,width,height);expect(tracker.age(900)?.state).toBe('REACQUIRING');expect(tracker.age(5100)?.targetLost).toBe(true);
- expect(tracker.update(frame(),5200,width,height)?.targetLost).toBe(true);
+ tracker.update(frame(),100,width,height);expect(tracker.age(900)?.state).toBe('REACQUIRING');expect(tracker.age(5900)?.targetLost).toBe(true);
+ expect(tracker.update(frame(),6000,width,height)?.targetLost).toBe(true);
 });
 it('legacy saved target names migrate without fabricating visual references',()=>{
  const profiles=migrateTargetProfiles(undefined,['My cup','My cup']);
@@ -101,4 +101,19 @@ it('weak or ambiguous global matches never regain tracking',()=>{
  for(let t=100;t<2000;t+=300){const result=tracker.update(image,t,width,height);expect(result?.state).toBe('REACQUIRING');}
  expect(tracker.capturedAt).toBe(0);
  }
+});
+
+it('initial MATCHING searches globally without a prior target and keeps searching fresh frames',()=>{
+ const tracker=new AppearanceTracker();tracker.initializeProfile(saveTargetView([],'Robot',reference())[0],false,width,height);
+ expect(tracker.state).toBe('MATCHING');
+ const empty={data:new Uint8ClampedArray(width*height*4).fill(30),width,height};
+ expect(tracker.update(empty,100,width,height)).toBeNull();
+ expect(tracker.state).toBe('MATCHING');expect(tracker.diagnostics.searchMode).toBe('global');
+ expect(tracker.diagnostics.rawCandidates).toBeGreaterThan(0);expect(tracker.diagnostics.searchMs).toBeGreaterThan(0);
+ expect(tracker.frameSequence).toBe(1);expect(tracker.lastSearchAt).toBe(100);expect(tracker.searchRequested).toBe(true);
+ tracker.update(empty,200,width,height);expect(tracker.searchRequested).toBe(false);expect(tracker.lastSearchAt).toBe(100);
+ expect(tracker.update(displaced(),400,width,height)?.state).toBe('TRACKING');
+ expect(tracker.frameSequence).toBe(3);expect(tracker.lastSearchAt).toBe(400);
+ tracker.stop();expect(tracker.state).toBe('IDLE');expect(tracker.update(displaced(),700,width,height)).toBeNull();
+ expect(tracker.frameSequence).toBe(0);
 });

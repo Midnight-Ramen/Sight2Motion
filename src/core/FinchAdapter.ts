@@ -45,6 +45,7 @@ export class FinchAdapter implements RobotAdapter {
   private contacted = false;
   private motionGeneration = 0;
   private followSignal: AbortSignal | null = null;
+  private timedMotion?: AbortController;
   private motionHeartbeat: ReturnType<typeof setTimeout> | undefined;
   constructor(
     private changed: (status: FinchStatus) => void = () => {},
@@ -117,6 +118,7 @@ export class FinchAdapter implements RobotAdapter {
     }, 1000);
   }
   async stop() {
+    this.timedMotion?.abort('Finch STOP/disconnect');this.timedMotion=undefined;
     this.followSignal = null;
     ++this.motionGeneration;
     clearTimeout(this.motionHeartbeat);
@@ -167,6 +169,9 @@ export class FinchAdapter implements RobotAdapter {
     )
       throw new Error(persistent ? 'Choose wheel speeds between -100% and 100%.' : 'For hardware validation use at most 20% speed and 1000 ms.');
     if (signal.aborted) return;
+    if(this.timedMotion && this.timedMotion.signal!==signal) {
+      this.timedMotion.abort('Motion ownership transferred');this.timedMotion=undefined;
+    }
     // Steering updates keep the existing renewable drive lease and heartbeat.
     if (mode === 'follow' && this.followSignal === signal) {
       const motion = this.motionGeneration;
@@ -226,6 +231,41 @@ export class FinchAdapter implements RobotAdapter {
       this.watchdog.disarm();
     }
   }
+  /** Rule durations use the existing renewable wheel lease. The low-level timed
+   * API remains bounded for the separate hardware-test buttons. */
+  private async executeTimedMove(action: Action, left:number, right:number, signal:AbortSignal) {
+    if(!Number.isFinite(action.duration) || action.duration<0 || action.duration>10000 ||
+      !Number.isFinite(action.speed) || action.speed<0 || action.speed>100)
+      throw new Error('Choose 0–100% speed and a duration from 0–10000 ms.');
+    if(signal.aborted)return;
+    const started=performance.now(),controller=new AbortController();
+    const cancel=()=>controller.abort(signal.reason ?? 'Action cancelled');
+    signal.addEventListener('abort',cancel,{once:true});
+    this.timedMotion?.abort('Timed action replaced');this.timedMotion=controller;
+    const motion=this.motionGeneration+1;
+    let commandedAt:number|null=null;
+    const details={actionId:action.id,direction:action.direction,speed:action.speed,duration:action.duration,left,right,owner:`timed:${action.id}`,startedAt:started};
+    console.debug('Finch timed action start',details);
+    try {
+      if(action.duration===0){await this.stop();return;}
+      // A single wheel command, with the same 250 ms watchdog renewal used by
+      // continuous motion. Hold duration starts after command acknowledgement.
+      await this.setWheelSpeeds(left,right,0,controller.signal,'continuous');
+      if(controller.signal.aborted || motion!==this.motionGeneration)throw new DOMException('Stopped','AbortError');
+      commandedAt=performance.now();
+      console.debug('Finch timed wheel command',{...details,commandedAt});
+      await delay(action.duration,controller.signal);
+    } finally {
+      signal.removeEventListener('abort',cancel);
+      // A cancelled old action must never stop or disarm a newer motion owner.
+      if(this.timedMotion===controller)this.timedMotion=undefined;
+      if(motion===this.motionGeneration){
+        ++this.motionGeneration;clearTimeout(this.motionHeartbeat);
+        try {await this.transport.command(`/hummingbird/out/stopFinch/${this.slot}`,undefined,true);this.watchdog.disarm();}
+        finally {console.debug('Finch timed action stop',{...details,commandedAt,stopAt:performance.now(),elapsedMs:performance.now()-(commandedAt??started),reason:controller.signal.aborted?controller.signal.reason:'Duration complete'});}
+      } else console.debug('Finch timed action cancelled',{...details,commandedAt,stopAt:performance.now(),elapsedMs:performance.now()-(commandedAt??started),reason:controller.signal.reason??'Motion ownership changed'});
+    }
+  }
   async executeAction(action: Action, signal: AbortSignal) {
     this.requireConnected();
     if (signal.aborted) return;
@@ -255,14 +295,12 @@ export class FinchAdapter implements RobotAdapter {
         }        break;
       }
       case 'move': {
-        const s = action.speed;
-        await this.setWheelSpeeds(
-          action.direction === 'backward' || action.direction === 'left' ? -s : s,
-          action.direction === 'backward' || action.direction === 'right' ? -s : s,
-          action.duration,
-          signal,
-          action.mode ?? 'timed',
-        );
+        if(!['forward','backward','left','right'].includes(action.direction))throw new Error('Choose a valid movement direction.');
+        const s=action.speed;
+        const left=action.direction==='backward'||action.direction==='left'?-s:s;
+        const right=action.direction==='backward'||action.direction==='right'?-s:s;
+        if(!action.mode || action.mode==='timed')await this.executeTimedMove(action,left,right,signal);
+        else await this.setWheelSpeeds(left,right,action.duration,signal,action.mode);
         break;
       }
       case 'wait':

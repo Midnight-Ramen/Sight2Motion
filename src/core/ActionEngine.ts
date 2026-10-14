@@ -80,7 +80,7 @@ export class ActionEngine {
     this.activeRuleIds.clear();
     this.outputOwners.clear();
     this.pendingOutputOwners.clear();
-    this.controller?.abort();
+    this.controller?.abort('Global STOP / safety cancellation');
     let delivery: Promise<void> | undefined;
     try {
       delivery = this.robot.stop(); this.stopDeliveries.add(delivery);
@@ -138,7 +138,7 @@ export class ActionEngine {
       const revision = ++this.revision;
       this.pendingOutputOwners = replacements;
       const previousRun = this.running;
-      this.controller?.abort();
+      this.controller?.abort(explicitStop?'Stop rule took ownership':lostOutputs.length?'Rule output no longer active':'New continuous output owner');
       // STOP/release bypass waits and timed actions. Drain their cancellation before a new drive.
       if (explicitStop || lostOutputs.length) {
         try {
@@ -248,7 +248,11 @@ export class ActionEngine {
           if (action.clearWhenFinished)
             for (const step of action.steps!) await setLight(step.light, '#000000');
         } else {
-          await this.robot.executeAction(action, controller.signal);
+          const timed=action.kind==='move' && (!action.mode || action.mode==='timed');
+          const startedAt=performance.now();
+          if(timed)console.debug('Timed rule action start',{actionId:action.id,ruleId:ruleId??null,owner:ruleId??'direct action',direction:action.direction,speed:action.speed,duration:action.duration,startedAt});
+          try {await this.robot.executeAction(action, controller.signal);}
+          finally {if(timed)console.debug('Timed rule action finished',{actionId:action.id,ruleId:ruleId??null,finishedAt:performance.now(),elapsedMs:performance.now()-startedAt,cancellationReason:controller.signal.aborted?controller.signal.reason:null});}
         }
       }
       return !controller.signal.aborted;
