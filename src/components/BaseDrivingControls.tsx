@@ -120,7 +120,9 @@ export function BaseDrivingControls({ templateSetup, engine, robot, sensors, pro
     return selectedStopping;
   };
   cancelRef.current = () => { coordinator.disarm(); cancel(); };
-  coordinator.safety = () => coordinator.avoiding && !avoidance.movingForward
+  coordinator.safety = () => latest.current.mode === 'None'
+    ? latest.current.available && !document.hidden
+    : coordinator.avoiding && !avoidance.movingForward
     ? latest.current.available && !document.hidden
     : (() => {
       const fresh = freshDistance(latest.current.sensors, performance.now()) !== null;
@@ -188,17 +190,17 @@ export function BaseDrivingControls({ templateSetup, engine, robot, sensors, pro
   }, [mode, selectedTargetProgram?.configured]);
   const busy = controller.active || cruise.current || coordinator.avoiding || !!selectedTargetProgram?.active;
   const blocked = !available || busy || !emergencySafe();
-  const ready = available && !busy && emergencySafe() && ruleSensorsFresh() && (mode === 'None' ||
+  const ready = available && !busy && (mode === 'None' || (emergencySafe() && ruleSensorsFresh() &&
     (mode === 'Follow selected target' ? !!selectedTargetProgram?.ready : Number.isFinite(baseSpeed) && baseSpeed >= 1 && baseSpeed <= 100 &&
       (mode !== 'Line Follow' || !!freshLines(sensors, performance.now())) &&
       (mode !== 'Keep Distance' || (!!encoderPair(sensors, performance.now()) && freshDistance(sensors, performance.now()) !== null &&
-        Number.isFinite(target) && target > 0 && Number.isFinite(tolerance) && tolerance >= 0 && tolerance < target))));
+        Number.isFinite(target) && target > 0 && Number.isFinite(tolerance) && tolerance >= 0 && tolerance < target)))));
   coordinator.program = { selected: mode !== 'None', requiresCamera: mode === 'Follow selected target', ready: () => ready, start: startBase };
   useEffect(() => { onProgramChange(); }, [ready, mode, onProgramChange]);
   const lineValues = freshLines(sensors, performance.now());
   const stripStatus = (mode === 'Follow selected target' ? selectedTargetProgram?.status || (selectedTargetProgram?.active ? `Following ${selectedTargetProgram.label}` : '') : status) || (!available ? 'Robot disconnected'
-    : (emergency || mode === 'Keep Distance') && freshDistance(sensors, performance.now()) === null ? 'Distance unavailable'
-    : !emergencySafe() ? 'Emergency braking'
+    : mode !== 'None' && (emergency || mode === 'Keep Distance') && freshDistance(sensors, performance.now()) === null ? 'Distance unavailable'
+    : mode !== 'None' && !emergencySafe() ? 'Emergency braking'
     : mode === 'Line Follow' && !lineValues ? 'Line unavailable'
     : mode === 'Keep Distance' && !encoderPair(sensors, performance.now()) ? 'Wheel readings unavailable' : '');
   return <section className="base-driving" aria-label="Base driving" data-selected-target={mode === 'Follow selected target' ? 'true' : undefined}>
