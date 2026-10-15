@@ -1,6 +1,7 @@
 import type { TemplateBaseSetup } from '../core/ProjectTemplates';
 import type { SelectedTargetProgram } from '../core/SelectedTargetProgram';
 import { NumericInput } from './NumericInput';
+import { baseLineSensorIds } from '../core/BaseLineSampling';
 import { AvoidanceTurnDiagnostics, AVOID_TURN_POWER } from '../core/AvoidanceTurnDiagnostics';
 import { FINCH_EFFECTIVE_TRACK_WIDTH_CM } from '../core/FinchGeometry';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
@@ -134,15 +135,16 @@ export function BaseDrivingControls({ templateSetup, engine, robot, sensors, pro
   useEffect(() => { turnDiagnostics.update(encoderPair(sensors, performance.now())); void controller.sensorsUpdated(); avoidance.sensorsUpdated(); encoderBarrier.sensorsUpdated(); void avoidanceNavigation.sensorsUpdated(); }, [sensors, controller, avoidance, avoidanceNavigation, encoderBarrier, turnDiagnostics]);
   const priorityKey = ruleSensors.map(sensor => sensor.id).join(',');
   const avoidanceMonitoring = avoidancePhase !== 'IDLE' && avoidancePhase !== 'COMPLETE' && avoidancePhase !== 'ABORTED';
+  const baseArmed = coordinator.enabled;
   useEffect(() => {
-    const line = controller.lineSensorIds;
+    const line = baseLineSensorIds(controller.lineSensorIds, mode, baseArmed);
     provider?.setPriority(avoidanceMonitoring ? ['finchEncoderLeft', 'finchEncoderRight', 'finchDistance'] : line.length ? [...new Set([...line, ...ruleSensors.map(sensor => sensor.id), ...(emergency ? ['finchDistance'] : [])])] : [], async state => {
       latest.current.sensors = state;
       if (avoidanceMonitoring) { turnDiagnostics.update(encoderPair(state, performance.now())); encoderBarrier.sensorsUpdated(); avoidance.sensorsUpdated(); await avoidanceNavigation.sensorsUpdated(); }
       else await controller.sensorsUpdated(true);
     });
     return () => provider?.setPriority([]);
-  }, [status, controller, provider, priorityKey, emergency, avoidanceMonitoring, avoidance, avoidanceNavigation, encoderBarrier, turnDiagnostics]);
+  }, [status, controller, provider, priorityKey, emergency, avoidanceMonitoring, avoidance, avoidanceNavigation, encoderBarrier, turnDiagnostics, mode, baseArmed]);
   useEffect(() => { if (!available) { selectedTargetProgram?.end(); coordinator.disarm(); cancel(); } }, [available, coordinator]);
   useEffect(() => {
     const stop = () => { selectedTargetProgram?.end(); coordinator.disarm(); cancel(); };
