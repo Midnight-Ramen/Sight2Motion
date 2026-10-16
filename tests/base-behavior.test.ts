@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { BaseBehaviorCoordinator } from '../src/core/BaseBehaviorCoordinator';
 import type { ActionEngine } from '../src/core/ActionEngine';
-import { makeRule } from '../src/core/types';
+import { makeRule, makeAction } from '../src/core/types';
 
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 it('does not mistake an asynchronous base startup for a rule reaction', async () => {
@@ -28,7 +28,7 @@ it('does not release base ownership on an empty evaluation; interrupts and resum
   coordinator.arm(driver); await settle();
   await coordinator.update([], []);
   expect(engine.updateRules).not.toHaveBeenCalled();
-  const rule = makeRule();
+  const rule = { ...makeRule(), actions: [makeAction('move')] };
   await coordinator.update([rule], [rule]);
   expect(driver.suspend).toHaveBeenCalledTimes(1);
   expect(driver.start).toHaveBeenCalledTimes(1);
@@ -40,7 +40,7 @@ it.each(['STOP', 'manual takeover', 'disconnect'])('never resumes after %s durin
   let complete!: (value: boolean) => void;
   coordinator.arm(driver); await settle();
   engine.updateRules.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
-  const rule = makeRule();
+  const rule = { ...makeRule(), actions: [makeAction('move')] };
   const reaction = coordinator.update([rule], [rule]); await settle();
   coordinator.disarm(); complete(true); await reaction;
   await coordinator.update([], []);
@@ -52,7 +52,7 @@ it('waits for pending rule completion and safe sensors before resuming', async (
   let complete!: (value: boolean) => void;
   coordinator.arm(driver); await settle();
   engine.updateRules.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
-  const rule = makeRule();
+  const rule = { ...makeRule(), actions: [makeAction('move')] };
   const reaction = coordinator.update([rule], [rule]); await settle();
   await coordinator.update([], []);
   expect(driver.start).toHaveBeenCalledTimes(1);
@@ -77,7 +77,7 @@ it('resumes after a temporary appearance reaction completes while the object is 
   let complete!: (value: boolean) => void;
   coordinator.arm(driver); await settle();
   engine.updateRules.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
-  const rule = { ...makeRule(), mode: 'appearance' as const };
+  const rule = { ...makeRule(), mode: 'appearance' as const, actions: [makeAction('move')] };
   const reaction = coordinator.update([rule], [rule]); await settle();
   await coordinator.update([], [rule]);
   expect(driver.start).toHaveBeenCalledTimes(1);

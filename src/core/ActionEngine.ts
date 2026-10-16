@@ -112,6 +112,17 @@ export class ActionEngine {
       await follow.controller.update(followTargets(rule, frame.detections, frame.width, frame.height, !!follow.controller.target), capturedAt);
     return result;
   }
+  /** Evaluate auxiliary outputs without releasing the independently running base wheels. */
+  async updateAuxiliaryRules(triggered: Rule[], active: Rule[]): Promise<boolean> {
+    if ([...triggered, ...active].some(rule => rule.actions.some(action => action.enabled &&
+      (outputKey(action) === 'wheels' || action.kind === 'stop')))) return false;
+    const owner = this.activeMotorOwnerRuleId ?? this.pendingOutputOwners.get('wheels');
+    const wheels = this.currentRules.filter(rule => rule.id === owner).map(rule => ({
+      ...rule, actions: rule.actions.filter(action => outputKey(action) === 'wheels'),
+    }));
+    this.currentRules = [...wheels, ...active];
+    return this.applyRules(triggered, this.currentRules);
+  }
   private async applyRules(triggered: Rule[], active: Rule[]): Promise<boolean> {
     const previous = this.activeRuleIds;
     this.activeRuleIds = new Set(active.map(r => r.id));

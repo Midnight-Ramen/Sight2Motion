@@ -15,6 +15,7 @@ export class BaseBehaviorCoordinator {
   private baseActive = false;
   private starting = false;
   private reacting = false;
+  private auxiliaryActive = false;
   private pending = 0;
   private suspension?: Promise<void>;
   private override?: DrivingOverride;
@@ -113,6 +114,16 @@ export class BaseBehaviorCoordinator {
     triggered = engineRules(triggered, this.suppressed);
     active = engineRules(active, this.suppressed);
     const revision = this.revision;
+    const affectsMotion = [...triggered, ...active].some(rule => rule.actions.some(action =>
+      action.enabled && (action.kind === 'move' || action.kind === 'stop')));
+    if (this.baseActive && !affectsMotion) {
+      // Lights/sound must not cancel navigation or release its ActionEngine wheel owner.
+      if (triggered.length || active.length || this.auxiliaryActive) {
+        this.auxiliaryActive = active.length > 0;
+        await this.engine.updateAuxiliaryRules(triggered, active);
+      }
+      return;
+    }
     const holding = active.some(rule => rule.mode === 'continuous' || rule.actions.some(action => action.enabled &&
       (action.kind === 'stop' || action.mode === 'continuous' || action.mode === 'follow')));
     this.reacting = !!(triggered.length || holding || (!this.baseActive && this.engine.busy));
